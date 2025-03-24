@@ -7,3 +7,4 @@ and by the fact that I solved the same issue. Should be experimental.
 - Exposing metrics of failed/successful rates
 - Able to inject via pod annotation/label
 
+WIP Diagram https://excalidraw.com/#json=G8pdBZbTTap_aNkDMKiqz,d2JNhKt-gacOyOgCPK3uqQ
