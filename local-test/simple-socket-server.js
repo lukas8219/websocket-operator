@@ -23,6 +23,7 @@ server.on('connection', (socket, req) => {
     console.log(`Received message: ${messageStr}`);
     
     // Echo the message back with a prefix
+    console.log(`Sending message back to client ${messageStr}`);
     socket.send(`Server received: ${messageStr}`);
   });
   

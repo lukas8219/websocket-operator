@@ -25,44 +25,52 @@ func main() {
 			clientConn.Close()
 			return
 		}
-		closeConnections := func() {
-			log.Println("Closing connection")
-			proxiedConn.Close()
-			clientConn.Close()
-		}
-		proxyMessagesClientMessages := func(clientConnection net.Conn, targetConnection net.Conn) {
-			defer closeConnections()
+		handleIncomingMessagesToProxy := func(clientConnection net.Conn, targetConnection net.Conn) {
 			for {
-				msg, op, _ := wsutil.ReadClientData(clientConnection)
-				err = wsutil.WriteServerMessage(targetConnection, op, msg)
+				msg, op, err := wsutil.ReadClientData(clientConnection)
 				if err != nil {
-					log.Println(errors.Join(err, errors.New("failed to write to client")))
+					clientConnection.Close()
+					log.Println(errors.Join(err, errors.New("failed to read from client")))
 					return
 				}
-				if op == ws.OpClose {
-					log.Println("Client closed connection")
-					return
-				}
-				log.Println("Proxied client message")
-			}
-		}
-		proxyServerMessages := func(serverConnection net.Conn, targetConnection net.Conn) {
-			defer closeConnections()
-			for {
-				msg, op, _ := wsutil.ReadServerData(serverConnection)
 				err = wsutil.WriteClientMessage(targetConnection, op, msg)
 				if err != nil {
 					log.Println(errors.Join(err, errors.New("failed to write to client")))
 					return
 				}
 				if op == ws.OpClose {
+					clientConnection.Close()
+					log.Println("Client closed connection")
+					return
+				}
+				log.Println("Proxied client message")
+			}
+		}
+		proxySidecarServerToClient := func(serverConnection net.Conn, targetConnection net.Conn) {
+			for {
+				//Read as client - from the server.
+				msg, op, err := wsutil.ReadServerData(serverConnection)
+				if err != nil {
+					serverConnection.Close()
+					log.Println(errors.Join(err, errors.New("failed to read from server")))
+					return
+				}
+				//Write as client - to the proxied connection
+				err = wsutil.WriteServerMessage(targetConnection, op, msg)
+				if err != nil {
+					targetConnection.Close()
+					log.Println(errors.Join(err, errors.New("failed to write to client")))
+					return
+				}
+				if op == ws.OpClose {
+					serverConnection.Close()
 					log.Println("Server closed connection")
 					return
 				}
 				log.Println("Proxied server message")
 			}
 		}
-		go proxyMessagesClientMessages(proxiedConn, clientConn)
-		go proxyServerMessages(clientConn, proxiedConn)
+		go proxySidecarServerToClient(proxiedConn, clientConn)
+		go handleIncomingMessagesToProxy(clientConn, proxiedConn)
 	}))
 }
