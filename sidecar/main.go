@@ -25,11 +25,15 @@ func main() {
 			clientConn.Close()
 			return
 		}
+		closeConnections := func() {
+			clientConn.Close()
+			proxiedConn.Close()
+		}
 		handleIncomingMessagesToProxy := func(clientConnection net.Conn, targetConnection net.Conn) {
+			defer closeConnections()
 			for {
 				msg, op, err := wsutil.ReadClientData(clientConnection)
 				if err != nil {
-					clientConnection.Close()
 					log.Println(errors.Join(err, errors.New("failed to read from client")))
 					return
 				}
@@ -39,7 +43,6 @@ func main() {
 					return
 				}
 				if op == ws.OpClose {
-					clientConnection.Close()
 					log.Println("Client closed connection")
 					return
 				}
@@ -47,23 +50,21 @@ func main() {
 			}
 		}
 		proxySidecarServerToClient := func(serverConnection net.Conn, targetConnection net.Conn) {
+			defer closeConnections()
 			for {
 				//Read as client - from the server.
 				msg, op, err := wsutil.ReadServerData(serverConnection)
 				if err != nil {
-					serverConnection.Close()
 					log.Println(errors.Join(err, errors.New("failed to read from server")))
 					return
 				}
 				//Write as client - to the proxied connection
 				err = wsutil.WriteServerMessage(targetConnection, op, msg)
 				if err != nil {
-					targetConnection.Close()
 					log.Println(errors.Join(err, errors.New("failed to write to client")))
 					return
 				}
 				if op == ws.OpClose {
-					serverConnection.Close()
 					log.Println("Server closed connection")
 					return
 				}
