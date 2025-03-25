@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: websocket-operator-controller
+  namespace: websocket-system
+  labels:
+    app: websocket-operator-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: websocket-operator-controller
+  template:
+    metadata:
+      labels:
+        app: websocket-operator-controller
+    spec:
+      containers:
+      - name: controller
+        image: docker.io/lukas8219/websocket-operator-controller:latest  # Update with your image tag
+        imagePullPolicy: Always
+        args:
+        - --cert-dir=/etc/webhook/certs
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            cpu: 200m
+            memory: 100Mi
+          requests:
+            cpu: 100m
+            memory: 50Mi
+        volumeMounts:
+        - name: tls-certs
+          mountPath: /etc/webhook/certs/server.crt
+          readOnly: true
+          subPath: tls.crt
+        - name: tls-certs
+          mountPath: /etc/webhook/certs/server.key
+          readOnly: true
+          subPath: tls.key
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTPS
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTPS
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: tls-certs
+        secret:
+          secretName: webhook-tls 

@@ -3,3 +3,6 @@
 **/build
 **/out
 **/target
+**/certs
+**/ca-bundle.base64
+**/*-generated.yaml

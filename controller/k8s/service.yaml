@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: websocket-operator-webhook
+  namespace: websocket-system
+spec:
+  selector:
+    app: websocket-operator-controller
+  ports:
+  - port: 443
+    targetPort: 8080
+    protocol: TCP
+    name: https 

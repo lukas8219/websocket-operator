@@ -1,0 +1,23 @@
+# Node.js dependencies
+node_modules
+npm-debug.log
+
+# Client-side files not needed for the server
+simple-socket-client.js
+
+# Git
+.git
+.gitignore
+
+# Logs
+logs
+*.log
+
+# OS specific
+.DS_Store
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo 

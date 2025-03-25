@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: main-ws-server
+  namespace: default
+  labels:
+    app: main-ws-server
+    ws.operator/enabled: "true"  # This label triggers the sidecar injection
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: main-ws-server
+  template:
+    metadata:
+      labels:
+        app: main-ws-server
+        ws.operator/enabled: "false"  # Also add to pod template for consistency
+    spec:
+      containers:
+      - name: main-ws-server
+        image: docker.io/lukas8219/websocket-operator-test-server:latest
+        ports:
+        - containerPort: 3001
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
