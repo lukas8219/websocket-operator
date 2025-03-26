@@ -6,7 +6,7 @@ set -e
 # Set variables
 REGISTRY=${REGISTRY:-"docker.io"}
 REPOSITORY=${REPOSITORY:-"lukas8219"}
-IMAGE_NAME=${IMAGE_NAME:-"websocket-operator-controller"}
+IMAGE_NAME=${IMAGE_NAME:-"websocket-operator-sidecar"}
 TAG=${TAG:-"latest"}
 
 # Full image name

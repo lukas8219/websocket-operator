@@ -56,4 +56,5 @@ spec:
       volumes:
       - name: tls-certs
         secret:
-          secretName: webhook-tls 
+          secretName: webhook-tls
+      serviceAccountName: websocket-operator-controller

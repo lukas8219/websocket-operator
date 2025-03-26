@@ -1,6 +1,6 @@
 module lukas8219/ws-operator/sidecar
 
-go 1.22.4
+go 1.23.4
 
 require (
 	github.com/gobwas/httphead v0.1.0 // indirect

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -13,10 +14,14 @@ import (
 	admissionv1 "k8s.io/api/admission/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 var (
@@ -157,6 +162,70 @@ func (si *SidecarInjector) mutate(ar *admissionv1.AdmissionReview) *admissionv1.
 				UID:     req.UID,
 				Allowed: true,
 			}
+		}
+	}
+
+	// Create a headless service name based on deployment name
+	headlessServiceName := fmt.Sprintf("ws-proxy-headless-%s", deployment.Name)
+
+	// Create headless service
+	headlessService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      headlessServiceName,
+			Namespace: deployment.Namespace,
+			Labels: map[string]string{
+				"app": deployment.Spec.Template.Labels["app"],
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "None", // Makes it headless
+			Selector:  deployment.Spec.Selector.MatchLabels,
+			Ports: []corev1.ServicePort{
+				{
+					Port:       3000,
+					TargetPort: intstr.FromInt(3000),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+		},
+	}
+
+	// Get Kubernetes client
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		log.Printf("Failed to get cluster config: %v", err)
+		return &admissionv1.AdmissionResponse{
+			UID:     req.UID,
+			Allowed: false,
+			Result: &metav1.Status{
+				Message: err.Error(),
+			},
+		}
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		log.Printf("Failed to create clientset: %v", err)
+		return &admissionv1.AdmissionResponse{
+			UID:     req.UID,
+			Allowed: false,
+			Result: &metav1.Status{
+				Message: err.Error(),
+			},
+		}
+	}
+
+	// Create the service
+	_, err = clientset.CoreV1().Services(deployment.Namespace).Create(context.Background(), headlessService, metav1.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		failHeadlessCreationError := fmt.Errorf("Failed to create headless service: %w", err)
+		log.Printf("Failed to create headless service: %v", failHeadlessCreationError)
+		return &admissionv1.AdmissionResponse{
+			UID:     req.UID,
+			Allowed: false,
+			Result: &metav1.Status{
+				Message: failHeadlessCreationError.Error(),
+			},
 		}
 	}
 
