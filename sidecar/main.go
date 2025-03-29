@@ -37,16 +37,18 @@ func main() {
 	// Key: user ID, Value: net.Conn
 	connections := make(map[string]net.Conn)
 	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Println("Received request:", r.Method, r.URL.Path)
+		log.Println("Request:", r.Method, r.URL.Path)
 		if r.Method == http.MethodPost && r.URL.Path == "/message" {
-			log.Println("HTTP Post Request")
 			if !userBloomFilter.Contains(r.Header.Get("ws-user-id")) {
-				log.Println("No recipient found in-memory")
+				log.Println("No recipient found in-memory", r.Header.Get("ws-user-id"))
+				w.WriteHeader(http.StatusNotFound)
+				return
 			}
 			userId := r.Header.Get("ws-user-id")
 			conn := connections[userId]
 			if conn == nil {
-				log.Println("No connection found")
+				log.Println("No connection found for", userId)
+				w.WriteHeader(http.StatusNotFound)
 				return
 			}
 			body, err := io.ReadAll(r.Body)
@@ -55,10 +57,10 @@ func main() {
 				return
 			}
 
-			opCodeStr := r.Header.Get("X-WS-Operation")
-			opCode := ws.OpCode(opCodeStr[0])
-
-			err = wsutil.WriteServerMessage(conn, opCode, body)
+			opCode := ws.OpCode(body[0])
+			message := body[1:]
+			log.Println("Writing message to client", userId, opCode, string(body))
+			err = wsutil.WriteClientMessage(conn, opCode, message)
 			if err != nil {
 				log.Printf("Failed to write WebSocket message: %v", err)
 				return
@@ -72,13 +74,13 @@ func main() {
 			return
 		}
 		userBloomFilter.Add(user)
-		log.Println("New connection")
+		log.Println("New connection from", user)
 		clientConn, _, _, err := ws.UpgradeHTTP(r, w)
 		if err != nil {
 			log.Println(err)
 		}
-		connections[user] = clientConn
 		proxiedConn, _, _, err := ws.Dial(context.Background(), "ws://localhost:"+*targetPort)
+		connections[user] = proxiedConn
 		if err != nil {
 			log.Println(errors.Join(errors.New("failed to dial proxied connection"), err))
 			clientConn.Close()

@@ -81,12 +81,12 @@ func Route(recipientId string, message []byte, opCode ws.OpCode) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "POST", "http://"+host+"/message", bytes.NewReader(message))
+	messageWithOpCode := append([]byte{byte(opCode)}, message...)
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://"+host+"/message", bytes.NewReader(messageWithOpCode))
 	if err != nil {
 		return errors.Join(errors.New("failed to create request"), err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-WS-Operation", "1")
 	req.Header.Set("ws-user-id", recipientId)
 
 	resp, err := http.DefaultClient.Do(req)

@@ -3,7 +3,7 @@
 const WebSocket = require('ws');
 
 
-const [,,user, recipientId, duration=30000, targetPort=3000] = process.argv;
+const [,,user, recipientId, duration=30000, targetPort=3000, interval=3000] = process.argv;
 
 // Server URL to connect to - change this to your WebSocket server address
 // Note: WebSockets use ws:// or wss:// protocol instead of http:// or https://
@@ -22,7 +22,7 @@ socket.on('open', () => {
     const message = JSON.stringify({ message: "HI", recipientId: recipientId, from: user });
     console.log(`Sent ${message} to server`);
     socket.send(message);  
-  }, 500);
+  }, interval);
 
   setTimeout(() => {
     clearInterval(hiInterval);
