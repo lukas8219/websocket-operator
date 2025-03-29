@@ -1,0 +1,29 @@
+.:53 {
+    errors
+    health {
+        lameduck 5s
+    }
+    ready
+    log
+    prometheus :9153
+
+    # SRV records for dynamic service discovery
+    template IN SRV {
+        match .*ws-operator\.local$
+        match .*ws-operator\.local\.$
+        answer "{{ .Name }} 10 IN SRV 10 5 3000 ws1.ws-operator.local"
+        answer "{{ .Name }} 10 IN SRV 10 5 3002 ws2.ws-operator.local"
+    }
+    
+    template IN A {
+        match .*ws-operator\.local$
+        match .*ws-operator\.local\.$
+        answer "{{ .Name }} 10 IN A 127.0.0.1"
+        rcode NOERROR
+    }
+    
+    cache 30
+    loop
+    reload
+    loadbalance
+}

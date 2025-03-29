@@ -11,5 +11,5 @@ require (
 	github.com/d4l3k/messagediff v1.2.1 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
-	golang.org/x/sys v0.6.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
 )

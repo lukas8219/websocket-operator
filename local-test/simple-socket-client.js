@@ -3,11 +3,11 @@
 const WebSocket = require('ws');
 
 
-const [,,user, recipientId, duration=30000] = process.argv;
+const [,,user, recipientId, duration=30000, targetPort=3000] = process.argv;
 
 // Server URL to connect to - change this to your WebSocket server address
 // Note: WebSockets use ws:// or wss:// protocol instead of http:// or https://
-const SERVER_URL = `ws://localhost:3000`;
+const SERVER_URL = `ws://localhost:${targetPort}`;
 
 console.log("Connecting to WebSocket server...");
 

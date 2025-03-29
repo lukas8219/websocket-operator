@@ -1,8 +1,10 @@
 // Import the WebSocket server library
 const WebSocket = require('ws');
 
+const [,,port=3001] = process.argv;
+
 // Port to listen on
-const PORT = 3001;
+const PORT = Number(port);
 
 // Create a WebSocket server
 const server = new WebSocket.Server({ port: PORT });

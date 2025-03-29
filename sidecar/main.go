@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"io"
 	"log"
 	"lukas8219/ws-operator/sidecar/collections"
@@ -18,7 +19,11 @@ import (
 
 func main() {
 	userField := "recipientId"
-	log.Println("Starting server on port 3000")
+	port := flag.String("port", "3000", "Port to listen on")
+	targetPort := flag.String("targetPort", "3001", "Port to target")
+	flag.Parse()
+
+	log.Printf("Starting server on port %s", *port)
 	//We might need to change for a Counting BloomFilter
 	userBloomFilter := collections.New(1000000) // should we make this externally configurable?
 	incomingMessageStruct := reflect.StructOf([]reflect.StructField{
@@ -31,7 +36,8 @@ func main() {
 	// Map to store active WebSocket connections
 	// Key: user ID, Value: net.Conn
 	connections := make(map[string]net.Conn)
-	http.ListenAndServe("localhost:3000", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Received request:", r.Method, r.URL.Path)
 		if r.Method == http.MethodPost && r.URL.Path == "/message" {
 			log.Println("HTTP Post Request")
 			if !userBloomFilter.Contains(r.Header.Get("ws-user-id")) {
@@ -72,7 +78,7 @@ func main() {
 			log.Println(err)
 		}
 		connections[user] = clientConn
-		proxiedConn, _, _, err := ws.Dial(context.Background(), "ws://localhost:3001")
+		proxiedConn, _, _, err := ws.Dial(context.Background(), "ws://localhost:"+*targetPort)
 		if err != nil {
 			log.Println(errors.Join(errors.New("failed to dial proxied connection"), err))
 			clientConn.Close()
