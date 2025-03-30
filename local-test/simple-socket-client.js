@@ -2,29 +2,34 @@
 // Browser environments can use the native WebSocket API directly
 const WebSocket = require('ws');
 
+
+const [,,user, recipientId, duration=30000, targetPort=3000, interval=3000] = process.argv;
+
 // Server URL to connect to - change this to your WebSocket server address
 // Note: WebSockets use ws:// or wss:// protocol instead of http:// or https://
-const SERVER_URL = "ws://localhost:3000";
+const SERVER_URL = `ws://localhost:${targetPort}`;
 
 console.log("Connecting to WebSocket server...");
 
 // Create a WebSocket connection
-const socket = new WebSocket(SERVER_URL);
+const socket = new WebSocket(SERVER_URL, { headers: { "ws-user-id": user } });
 
 // When successfully connected
 socket.on('open', () => {
   console.log("Connected to WebSocket server");
   
-  // Send "HI" message to the server
-  socket.send("HI");
-  console.log("Sent 'HI' message to server");
-  
-  // Wait 1 second and then disconnect
+  const hiInterval = setInterval(() => {
+    const message = JSON.stringify({ message: "HI", recipientId: recipientId, from: user });
+    console.log(`Sent ${message} to server`);
+    socket.send(message);  
+  }, interval);
+
   setTimeout(() => {
+    clearInterval(hiInterval);
     console.log("Disconnecting...");
     socket.close();
-  }, 1000);
-});
+  }, Number(duration))
+})
 
 // Handle errors
 socket.on('error', (error) => {

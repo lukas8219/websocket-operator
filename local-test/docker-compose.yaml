@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  coredns:
+    image: coredns/coredns:1.10.1
+    container_name: coredns
+    command: ["-conf", "/etc/coredns/Corefile"]
+    network_mode: "host"
+    volumes:
+      - ./coredns/Corefile:/etc/coredns/Corefile:ro
+    restart: unless-stopped
+    ports:
+      - 53:53/udp
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

@@ -1,0 +1,65 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug SideCar WS - 1",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/sidecar/main.go",
+            "args": [
+                "-port", "3000",
+                "-targetPort", "3001"
+            ],
+            "cwd": "${workspaceFolder}",
+            "output": "debug",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug SideCar WS - 2",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/sidecar/main.go",
+            "args": [
+                "-port", "3002",
+                "-targetPort", "3003"
+            ],
+            "cwd": "${workspaceFolder}",
+            "output": "debug",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug CoreDNS Operator (Configurable Ports)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/main.go",
+            "args": [
+                "-port", "${input:dnsPort}",
+                "-targetPort", "${input:serviceTargetPort}"
+            ],
+            "env": {
+                "GO_ENV": "development",
+                "DEBUG": "true"
+            },
+            "cwd": "${workspaceFolder}",
+            "output": "debug",
+            "console": "integratedTerminal"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "dnsPort",
+            "type": "promptString",
+            "description": "DNS Server Port",
+            "default": "53"
+        },
+        {
+            "id": "serviceTargetPort",
+            "type": "promptString",
+            "description": "Service Target Port",
+            "default": "3000"
+        }
+    ]
+} 
