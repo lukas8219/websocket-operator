@@ -10,11 +10,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy the source code
-COPY main.go ./
+COPY ./ ./
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sidecar .
-
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sidecar ./cmd/sidecar/main.go
 # Runtime stage
 FROM alpine:3.19
 

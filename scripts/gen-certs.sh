@@ -7,7 +7,7 @@ set -e
 SERVICE_NAME=websocket-operator-webhook
 NAMESPACE=websocket-system
 SECRET_NAME=webhook-tls
-CERT_DIR=certs
+CERT_DIR=deployments/certs
 
 # Create certificate directory
 mkdir -p ${CERT_DIR}
@@ -49,10 +49,10 @@ cd ..
 
 # Update the Secret and MutatingWebhookConfiguration with the certificates
 sed "s|\${TLS_CERT}|${TLS_CERT}|g;s|\${TLS_KEY}|${TLS_KEY}|g" \
-    templates/tls-secrets.yaml > k8s/tls-secrets-generated.yaml
+    ../deployments/templates/tls-secrets.yaml > ../deployments/k8s/tls-secrets-generated.yaml
 
 sed "s|\${CA_BUNDLE}|${CA_BUNDLE}|g" \
-    templates/webhook.yaml > k8s/webhook-generated.yaml
+    ../deployments/templates/webhook.yaml > ../deployments/k8s/webhook-generated.yaml
 
 # Output the CA bundle for reference
 echo "CA_BUNDLE: ${CA_BUNDLE}"
