@@ -54,7 +54,9 @@ func (r *Router) InitializeHosts() error {
 }
 
 func createResolver() *net.Resolver {
-
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		return &net.Resolver{}
+	}
 	// Create a custom resolver that first tries localhost:53 (for testing)
 	// and falls back to the system resolver if that fails
 	r := &net.Resolver{
@@ -81,7 +83,6 @@ func (r *Router) getCurrentHosts(service string) ([]string, error) {
 	resolver := createResolver()
 	log.Println("Getting random SRV host for service:", service)
 	_, addrs, err := resolver.LookupSRV(context.Background(), "", "", service)
-	log.Println("Addrs:", addrs)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +100,6 @@ func (r *Router) getCurrentHosts(service string) ([]string, error) {
 		}
 		addrPorts[i] = net.JoinHostPort(addr[0].String(), strconv.Itoa(int(srv.Port)))
 	}
-
+	log.Println("Addrs:", addrPorts)
 	return addrPorts, nil
 }

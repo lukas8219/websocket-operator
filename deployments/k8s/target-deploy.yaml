@@ -7,7 +7,7 @@ metadata:
     app: main-ws-server
     ws.operator/enabled: "true"  # This label triggers the sidecar injection
 spec:
-  replicas: 1
+  replicas: 5
   selector:
     matchLabels:
       app: main-ws-server
@@ -15,7 +15,7 @@ spec:
     metadata:
       labels:
         app: main-ws-server
-        ws.operator/enabled: "false"  # Also add to pod template for consistency
+        ws.operator/enabled: "true"  # Also add to pod template for consistency
     spec:
       containers:
       - name: main-ws-server

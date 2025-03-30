@@ -1,0 +1,9 @@
+#Temporary configmap for testing
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: websocket-operator-config
+  labels:
+    app: websocket-operator
+data:
+  WS_OPERATOR_SRV_DNS_RECORD: "ws-proxy-headless.default.svc.cluster.local"
