@@ -39,6 +39,15 @@ func (r *Router) Add(host []string) {
 	}
 }
 
+func (r *Router) InitializeHosts() error {
+	hosts, err := r.getCurrentHosts("sidecar")
+	if err != nil {
+		return err
+	}
+	r.Add(hosts)
+	return nil
+}
+
 func createResolver() *net.Resolver {
 
 	// Create a custom resolver that first tries localhost:53 (for testing)
@@ -63,17 +72,17 @@ func createResolver() *net.Resolver {
 	return r
 }
 
-func (r *Router) GetRandomSRVHost(recipientId string, service string) (string, error) {
+func (r *Router) getCurrentHosts(service string) ([]string, error) {
 	resolver := createResolver()
 	log.Println("Getting random SRV host for service:", service)
 	_, addrs, err := resolver.LookupSRV(context.Background(), "", "", service)
 	log.Println("Addrs:", addrs)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if len(addrs) == 0 {
-		return "", nil
+		return []string{}, nil
 	}
 
 	// Create a slice of tuples [addr,port] from the SRV records
@@ -81,17 +90,14 @@ func (r *Router) GetRandomSRVHost(recipientId string, service string) (string, e
 	for i, srv := range addrs {
 		addr, err := resolver.LookupIP(context.Background(), "ip", srv.Target)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		addrPorts[i] = net.JoinHostPort(addr[0].String(), strconv.Itoa(int(srv.Port)))
 	}
 
-	// Use the router to select a host based on recipient ID
-	r.Add(addrPorts)
+	return addrPorts, nil
+}
 
-	addrAndPort := r.Route(recipientId)
-	if err != nil {
-		return "", err
-	}
-	return addrAndPort, nil
+func (r *Router) GetRandomSRVHost(recipientId string, service string) string {
+	return r.Route(recipientId)
 }

@@ -22,11 +22,7 @@ func SendProxiedMessage(recipientId string, message []byte, opCode ws.OpCode) er
 	if srvRecord == "" {
 		srvRecord = "ws-operator.local"
 	}
-	host, err := router.GetRandomSRVHost(recipientId, srvRecord)
-	if err != nil {
-		log.Println("Error getting SRV records:", err)
-		return err
-	}
+	host := router.GetRandomSRVHost(recipientId, srvRecord)
 
 	log.Println("Host:", host)
 	if host == "" {
