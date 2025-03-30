@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/gobwas/ws"
@@ -17,11 +16,7 @@ var (
 )
 
 func Route(recipientId string, message []byte, opCode ws.OpCode) error {
-	srvRecord := os.Getenv("WS_OPERATOR_SRV_DNS_RECORD")
-	if srvRecord == "" {
-		srvRecord = "ws-operator.local"
-	}
-	host := router.GetRandomSRVHost(recipientId, srvRecord)
+	host := router.Route(recipientId)
 
 	log.Println("Host:", host)
 	if host == "" {

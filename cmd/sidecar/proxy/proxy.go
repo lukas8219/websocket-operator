@@ -7,7 +7,6 @@ import (
 	"log"
 	"lukas8219/websocket-operator/internal/route"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/gobwas/ws"
@@ -17,12 +16,16 @@ var (
 	router *route.Router = route.NewRouter()
 )
 
-func SendProxiedMessage(recipientId string, message []byte, opCode ws.OpCode) error {
-	srvRecord := os.Getenv("WS_OPERATOR_SRV_DNS_RECORD")
-	if srvRecord == "" {
-		srvRecord = "ws-operator.local"
+// Stop doing this kind of side-effect in `init`
+func init() {
+	err := router.InitializeHosts()
+	if err != nil {
+		log.Println(errors.Join(errors.New("failed to initialize hosts"), err))
 	}
-	host := router.GetRandomSRVHost(recipientId, srvRecord)
+}
+
+func SendProxiedMessage(recipientId string, message []byte, opCode ws.OpCode) error {
+	host := router.Route(recipientId)
 
 	log.Println("Host:", host)
 	if host == "" {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"os"
 	"strconv"
 	"time"
 
@@ -40,7 +41,11 @@ func (r *Router) Add(host []string) {
 }
 
 func (r *Router) InitializeHosts() error {
-	hosts, err := r.getCurrentHosts("sidecar")
+	srvRecord := os.Getenv("WS_OPERATOR_SRV_DNS_RECORD")
+	if srvRecord == "" {
+		srvRecord = "ws-operator.local"
+	}
+	hosts, err := r.getCurrentHosts(srvRecord)
 	if err != nil {
 		return err
 	}
@@ -96,8 +101,4 @@ func (r *Router) getCurrentHosts(service string) ([]string, error) {
 	}
 
 	return addrPorts, nil
-}
-
-func (r *Router) GetRandomSRVHost(recipientId string, service string) string {
-	return r.Route(recipientId)
 }

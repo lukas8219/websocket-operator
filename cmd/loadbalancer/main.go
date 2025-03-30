@@ -42,7 +42,13 @@ func main() {
 			log.Println(err)
 		}
 		host := router.Route(user)
-		proxiedConn, _, _, err := ws.Dial(context.Background(), "ws://"+host)
+		log.Println("Dialing upstream", host)
+		dialer := ws.Dialer{
+			Header: ws.HandshakeHeaderHTTP{
+				"ws-user-id": []string{user},
+			},
+		}
+		proxiedConn, _, _, err := dialer.Dial(context.Background(), "ws://"+host)
 		if err != nil {
 			log.Println(errors.Join(errors.New("failed to dial upstream"), err))
 			clientConn.Close()
