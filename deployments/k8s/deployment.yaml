@@ -58,3 +58,53 @@ spec:
         secret:
           secretName: webhook-tls
       serviceAccountName: websocket-operator-controller
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: websocket-operator-loadbalancer
+  labels:
+    app: websocket-operator-loadbalancer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: websocket-operator-loadbalancer
+  template:
+    metadata:
+      labels:
+        app: websocket-operator-loadbalancer
+    spec:
+      containers:
+      - name: loadbalancer
+        envFrom:
+          - configMapRef:
+              name: websocket-operator-config
+        image: docker.io/lukas8219/websocket-operator-loadbalancer:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+        resources:
+          limits:
+            cpu: 200m
+            memory: 100Mi
+          requests:
+            cpu: 100m
+            memory: 50Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: websocket-operator-loadbalancer
+  labels:
+    app: websocket-operator-loadbalancer
+spec:
+  selector:
+    app: websocket-operator-loadbalancer
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  type: ClusterIP
+

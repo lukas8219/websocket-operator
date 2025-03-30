@@ -8,7 +8,7 @@ import (
 	"io"
 	"log"
 	"lukas8219/websocket-operator/cmd/sidecar/collections"
-	"lukas8219/websocket-operator/cmd/sidecar/route"
+	"lukas8219/websocket-operator/cmd/sidecar/proxy"
 	"net"
 	"net/http"
 	"reflect"
@@ -121,7 +121,7 @@ func main() {
 				log.Println("RecipientId:", recipientIdString)
 				if !userBloomFilter.Contains(recipientIdString) {
 					log.Println("No recipient found in-memory. Routing message to the correct target.")
-					err := route.Route(recipientIdString, msg, op)
+					err := proxy.SendProxiedMessage(recipientIdString, msg, op)
 					if err != nil {
 						log.Println(errors.Join(err, errors.New("failed to route message")))
 					}

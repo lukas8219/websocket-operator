@@ -166,7 +166,7 @@ func (si *SidecarInjector) mutate(ar *admissionv1.AdmissionReview) *admissionv1.
 	}
 
 	// Create a headless service name based on deployment name
-	headlessServiceName := fmt.Sprintf("ws-proxy-headless-%s", deployment.Name)
+	headlessServiceName := "ws-proxy-headless"
 
 	// Create headless service
 	headlessService := &corev1.Service{
@@ -275,6 +275,15 @@ func createPatch(deployment *appsv1.Deployment) ([]byte, error) {
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("50m"),
 				corev1.ResourceMemory: resource.MustParse("25Mi"),
+			},
+		},
+		EnvFrom: []corev1.EnvFromSource{
+			{
+				ConfigMapRef: &corev1.ConfigMapEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "websocket-operator-config",
+					},
+				},
 			},
 		},
 	}
