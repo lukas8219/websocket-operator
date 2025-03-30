@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -13,6 +12,10 @@ import (
 	"time"
 
 	"github.com/gobwas/ws"
+)
+
+var (
+	router *Router = NewRouter()
 )
 
 func createResolver() *net.Resolver {
@@ -39,7 +42,7 @@ func createResolver() *net.Resolver {
 	return r
 }
 
-func getRandomSRVHost(service string) (string, error) {
+func getRandomSRVHost(recipientId string, service string) (string, error) {
 	resolver := createResolver()
 	log.Println("Getting random SRV host for service:", service)
 	_, addrs, err := resolver.LookupSRV(context.Background(), "", "", service)
@@ -52,15 +55,24 @@ func getRandomSRVHost(service string) (string, error) {
 		return "", nil
 	}
 
-	// Pick a random address from the list
-	selected := addrs[rand.Intn(len(addrs))]
+	// Create a slice of tuples [addr,port] from the SRV records
+	addrPorts := make([]string, len(addrs))
+	for i, srv := range addrs {
+		addr, err := resolver.LookupIP(context.Background(), "ip", srv.Target)
+		if err != nil {
+			return "", err
+		}
+		addrPorts[i] = net.JoinHostPort(addr[0].String(), strconv.Itoa(int(srv.Port)))
+	}
 
-	addr, err := resolver.LookupIP(context.Background(), "ip", selected.Target)
+	// Use the router to select a host based on recipient ID
+	router.Add(addrPorts)
+
+	addrAndPort := router.Route(recipientId)
 	if err != nil {
 		return "", err
 	}
-	host := net.JoinHostPort(addr[0].String(), strconv.Itoa(int(selected.Port)))
-	return host, nil
+	return addrAndPort, nil
 }
 
 func Route(recipientId string, message []byte, opCode ws.OpCode) error {
@@ -68,7 +80,7 @@ func Route(recipientId string, message []byte, opCode ws.OpCode) error {
 	if srvRecord == "" {
 		srvRecord = "ws-operator.local"
 	}
-	host, err := getRandomSRVHost(srvRecord)
+	host, err := getRandomSRVHost(recipientId, srvRecord)
 	if err != nil {
 		log.Println("Error getting SRV records:", err)
 		return err
