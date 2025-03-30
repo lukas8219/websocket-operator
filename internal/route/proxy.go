@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	router *Router = NewRouter()
+	router RouterImpl = NewRouter(RouterConfig{Mode: RouterConfigModeDns})
 )
 
 func Route(recipientId string, message []byte, opCode ws.OpCode) error {

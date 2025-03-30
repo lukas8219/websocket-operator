@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	router = *route.NewRouter()
+	router route.RouterImpl = route.NewRouter(route.RouterConfig{Mode: route.RouterConfigModeKubernetes})
 )
 
 func init() {

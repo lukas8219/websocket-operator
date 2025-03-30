@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	router *route.Router = route.NewRouter()
+	router route.RouterImpl = route.NewRouter(route.RouterConfig{Mode: route.RouterConfigModeDns})
 )
 
 // Stop doing this kind of side-effect in `init`
