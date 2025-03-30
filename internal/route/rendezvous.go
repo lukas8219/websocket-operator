@@ -1,22 +1,43 @@
 package route
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"log"
 	"net"
-	"net/http"
-	"os"
 	"strconv"
 	"time"
 
-	"github.com/gobwas/ws"
+	"github.com/dgryski/go-rendezvous"
 )
 
-var (
-	router *Router = NewRouter()
-)
+type Router struct {
+	rendezvous rendezvous.Rendezvous
+}
+
+func NewRouter() *Router {
+	return &Router{
+		rendezvous: *rendezvous.New([]string{}, func(s string) uint64 {
+			var sum uint64
+			for _, c := range s {
+				sum += uint64(c)
+			}
+			return sum
+		}),
+	}
+}
+
+func (r *Router) Route(recipientId string) string {
+	return r.rendezvous.Lookup(recipientId)
+}
+
+func (r *Router) Add(host []string) {
+	if r.rendezvous.Lookup(host[0]) != "" {
+		return
+	}
+	for _, host := range host {
+		r.rendezvous.Add(host)
+	}
+}
 
 func createResolver() *net.Resolver {
 
@@ -42,7 +63,7 @@ func createResolver() *net.Resolver {
 	return r
 }
 
-func getRandomSRVHost(recipientId string, service string) (string, error) {
+func (r *Router) GetRandomSRVHost(recipientId string, service string) (string, error) {
 	resolver := createResolver()
 	log.Println("Getting random SRV host for service:", service)
 	_, addrs, err := resolver.LookupSRV(context.Background(), "", "", service)
@@ -66,47 +87,11 @@ func getRandomSRVHost(recipientId string, service string) (string, error) {
 	}
 
 	// Use the router to select a host based on recipient ID
-	router.Add(addrPorts)
+	r.Add(addrPorts)
 
-	addrAndPort := router.Route(recipientId)
+	addrAndPort := r.Route(recipientId)
 	if err != nil {
 		return "", err
 	}
 	return addrAndPort, nil
-}
-
-func Route(recipientId string, message []byte, opCode ws.OpCode) error {
-	srvRecord := os.Getenv("WS_OPERATOR_SRV_DNS_RECORD")
-	if srvRecord == "" {
-		srvRecord = "ws-operator.local"
-	}
-	host, err := getRandomSRVHost(recipientId, srvRecord)
-	if err != nil {
-		log.Println("Error getting SRV records:", err)
-		return err
-	}
-
-	log.Println("Host:", host)
-	if host == "" {
-		return errors.New("no host found")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-	messageWithOpCode := append([]byte{byte(opCode)}, message...)
-	req, err := http.NewRequestWithContext(ctx, "POST", "http://"+host+"/message", bytes.NewReader(messageWithOpCode))
-	if err != nil {
-		return errors.Join(errors.New("failed to create request"), err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("ws-user-id", recipientId)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Println("Error sending request:", err)
-		return err
-	}
-	log.Println("Response:", resp)
-	defer resp.Body.Close()
-	return nil
 }
