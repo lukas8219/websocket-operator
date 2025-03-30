@@ -15,7 +15,7 @@ FULL_IMAGE_NAME="${REGISTRY}/${REPOSITORY}/${IMAGE_NAME}:${TAG}"
 echo "Building image: ${FULL_IMAGE_NAME}"
 
 # Build the Docker image
-docker build -t ${FULL_IMAGE_NAME} ${BUILD_ARGS} .
+docker build -f cmd/controller/Dockerfile -t ${FULL_IMAGE_NAME} ${BUILD_ARGS} .
 
 # Push the Docker image
 if [ "${PUSH:-false}" == "true" ]; then

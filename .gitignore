@@ -6,3 +6,4 @@
 **/certs
 **/ca-bundle.base64
 **/*-generated.yaml
+vendor/
