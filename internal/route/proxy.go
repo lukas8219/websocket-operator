@@ -11,13 +11,7 @@ import (
 	"github.com/gobwas/ws"
 )
 
-var (
-	router RouterImpl = NewRouter(RouterConfig{Mode: RouterConfigModeDns})
-)
-
-func Route(recipientId string, message []byte, opCode ws.OpCode) error {
-	host := router.Route(recipientId)
-
+func Route(host string, recipientId string, message []byte, opCode ws.OpCode) error {
 	log.Println("Host:", host)
 	if host == "" {
 		return errors.New("no host found")

@@ -7,6 +7,7 @@ toolchain go1.23.7
 require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f
 	github.com/gobwas/ws v1.4.0
+	github.com/twmb/murmur3 v1.1.8
 	github.com/tylertreat/BoomFilters v0.0.0-20210315201527-1a82519a3e43
 	k8s.io/api v0.32.3
 	k8s.io/apimachinery v0.32.3

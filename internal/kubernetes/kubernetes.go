@@ -40,29 +40,27 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 		ObjectType:    &v1.Endpoints{},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				hosts := make([]string, 0)
+				hosts := make([]string, 1)
 				for _, address := range obj.(*v1.Endpoints).Subsets[0].Addresses {
 					hosts = append(hosts, address.IP)
 				}
 				for _, host := range hosts {
-					loadbalancer.Remove(host)
 					loadbalancer.Add(host)
 				}
 				log.Println("Added", hosts, "addresses")
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				hosts := make([]string, 0)
+				hosts := make([]string, 1)
 				for _, address := range newObj.(*v1.Endpoints).Subsets[0].Addresses {
 					hosts = append(hosts, address.IP)
 				}
 				for _, host := range hosts {
-					loadbalancer.Remove(host)
 					loadbalancer.Add(host)
 				}
 				log.Println("Updated", hosts, "addresses")
 			},
 			DeleteFunc: func(obj interface{}) {
-				hosts := make([]string, 0)
+				hosts := make([]string, 1)
 				for _, address := range obj.(*v1.Endpoints).Subsets[0].Addresses {
 					hosts = append(hosts, address.IP)
 				}
@@ -89,7 +87,14 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 }
 
 func (k *KubernetesRouter) Route(recipientId string) string {
-	return fmt.Sprintf("%s:3000", k.loadbalancer.Lookup(recipientId))
+	host := k.loadbalancer.Lookup(recipientId)
+	if host == "" {
+		log.Println("No host found for", recipientId)
+		return ""
+	}
+	log.Println("Host found for", recipientId, host)
+	host = fmt.Sprintf("%s:3000", host)
+	return host
 }
 
 func (k *KubernetesRouter) Add(host []string) {
@@ -102,7 +107,7 @@ func (k *KubernetesRouter) InitializeHosts() error {
 	hosts := make([]string, 0)
 	for _, endpoint := range endpoints {
 		for _, address := range endpoint.(*v1.Endpoints).Subsets[0].Addresses {
-			hosts = append(hosts, fmt.Sprintf("%s:3000", address.IP))
+			hosts = append(hosts, address.IP)
 		}
 	}
 	for _, host := range hosts {

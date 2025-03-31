@@ -17,6 +17,7 @@ spec:
         app: main-ws-server
         ws.operator/enabled: "true"  # Also add to pod template for consistency
     spec:
+      serviceAccountName: loadbalancer-sa
       containers:
       - name: main-ws-server
         image: docker.io/lukas8219/websocket-operator-test-server:latest

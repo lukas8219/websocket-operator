@@ -6,6 +6,8 @@ import (
 	"lukas8219/websocket-operator/internal/dns"
 
 	"github.com/dgryski/go-rendezvous"
+
+	"github.com/twmb/murmur3"
 )
 
 type RouterImpl interface {
@@ -26,12 +28,12 @@ const (
 )
 
 func NewRouter(config RouterConfig) RouterImpl {
+
 	rendezvous := rendezvous.New([]string{}, func(s string) uint64 {
-		var sum uint64
-		for _, c := range s {
-			sum += uint64(c)
-		}
-		return sum
+		murmurAlgorithm := murmur3.New64()
+		murmurAlgorithm.Write([]byte(s))
+		hash := murmurAlgorithm.Sum64()
+		return hash
 	})
 	switch config.Mode {
 	case RouterConfigModeDns:

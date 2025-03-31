@@ -13,11 +13,11 @@ import (
 )
 
 var (
-	router route.RouterImpl = route.NewRouter(route.RouterConfig{Mode: route.RouterConfigModeDns})
+	router route.RouterImpl
 )
 
-// Stop doing this kind of side-effect in `init`
-func init() {
+func InitializeProxy(mode string) {
+	router = route.NewRouter(route.RouterConfig{Mode: route.RouterConfigMode(mode)})
 	err := router.InitializeHosts()
 	if err != nil {
 		log.Println(errors.Join(errors.New("failed to initialize hosts"), err))
@@ -26,10 +26,13 @@ func init() {
 
 func SendProxiedMessage(recipientId string, message []byte, opCode ws.OpCode) error {
 	host := router.Route(recipientId)
-
-	log.Println("Host:", host)
 	if host == "" {
 		return errors.New("no host found")
+	}
+	log.Println("Host:", host)
+	err := route.Route(host, recipientId, message, opCode)
+	if err != nil {
+		return errors.Join(errors.New("failed to route message"), err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
