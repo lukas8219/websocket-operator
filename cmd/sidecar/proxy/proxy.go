@@ -30,11 +30,6 @@ func SendProxiedMessage(recipientId string, message []byte, opCode ws.OpCode) er
 		return errors.New("no host found")
 	}
 	log.Println("Host:", host)
-	err := route.Route(host, recipientId, message, opCode)
-	if err != nil {
-		return errors.Join(errors.New("failed to route message"), err)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	messageWithOpCode := append([]byte{byte(opCode)}, message...)
