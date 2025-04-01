@@ -55,6 +55,14 @@ func (r *Rendezvous) Add(node string) {
 	r.nhash = append(r.nhash, r.hash(node))
 }
 
+func (r *Rendezvous) HasNode(node string) bool {
+	return r.nodes[node] != 0
+}
+
+func (r *Rendezvous) GetNodes() []string {
+	return r.nstr
+}
+
 func (r *Rendezvous) Remove(node string) {
 	if len(r.nodes) == 0 {
 		return

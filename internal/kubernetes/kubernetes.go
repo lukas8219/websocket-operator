@@ -17,9 +17,14 @@ import (
 )
 
 type KubernetesRouter struct {
-	k8sClient    *kubernetes.Clientset
-	cacheStore   cache.Store
-	loadbalancer *rendezvous.Rendezvous
+	k8sClient                   *kubernetes.Clientset
+	cacheStore                  cache.Store
+	loadbalancer                *rendezvous.Rendezvous
+	rebalancedHostTrigger       func([]string) error
+	alreadyCalculatedRecipients map[string]string
+	handleUpdatedEndpoints      func([]string)
+	handleCreatedEnpoints       func([]string)
+	handleDeletedEnpoints       func([]string)
 }
 
 var (
@@ -27,6 +32,15 @@ var (
 )
 
 func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
+	client := createClient()
+	return &KubernetesRouter{
+		k8sClient:                   client,
+		alreadyCalculatedRecipients: make(map[string]string),
+		loadbalancer:                loadbalancer,
+	}
+}
+
+func createClient() *kubernetes.Clientset {
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		kubeconfig := filepath.Join(
@@ -36,10 +50,30 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 		log.Println("Failed to get in-cluster config, using empty config")
 	}
 
-	client := kubernetes.NewForConfigOrDie(config)
-	watchList := cache.NewListWatchFromClient(client.CoreV1().RESTClient(), "endpoints", "default",
+	return kubernetes.NewForConfigOrDie(config)
+}
+
+func (k *KubernetesRouter) Route(recipientId string) string {
+	host := k.loadbalancer.Lookup(recipientId)
+	if host == "" {
+		log.Println("No host found for", recipientId)
+		return ""
+	}
+	k.alreadyCalculatedRecipients[recipientId] = host
+	log.Println("Host found for", recipientId, host)
+	host = fmt.Sprintf("%s:3000", host)
+	return host
+}
+
+func (k *KubernetesRouter) Add(host []string) {
+	return
+}
+
+func (k *KubernetesRouter) InitializeHosts() error {
+	watchList := cache.NewListWatchFromClient(k.k8sClient.CoreV1().RESTClient(), "endpoints", "default",
 		fields.OneTermEqualSelector("metadata.name", "ws-proxy-headless"),
 	)
+
 	store, controller := cache.NewInformerWithOptions(cache.InformerOptions{
 		ListerWatcher: watchList,
 		ObjectType:    &v1.Endpoints{},
@@ -52,8 +86,8 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 					}
 				}
 				for _, host := range hosts {
-					if loadbalancer.Lookup(host) == "" {
-						loadbalancer.Add(host)
+					if k.loadbalancer.Lookup(host) == "" {
+						k.loadbalancer.Add(host)
 						addedHosts[host] = true
 					}
 				}
@@ -65,7 +99,7 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 				if len(addedHosts) > 0 {
 					for _, subset := range oldObj.(*v1.Endpoints).Subsets {
 						for _, address := range subset.Addresses {
-							loadbalancer.Remove(address.IP)
+							k.loadbalancer.Remove(address.IP)
 							delete(addedHosts, address.IP)
 						}
 					}
@@ -76,10 +110,19 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 					}
 				}
 				for _, host := range hosts {
-					loadbalancer.Add(host)
+					k.loadbalancer.Add(host)
 					addedHosts[host] = true
 				}
 				log.Println("Updated", hosts, "addresses")
+				rebalanceHosts := make([]string, 0)
+				//re-calculate computed recipients to check re-balancing
+				for recipientId, _ := range k.alreadyCalculatedRecipients {
+					if k.loadbalancer.HasNode(recipientId) {
+						rebalanceHosts = append(rebalanceHosts, recipientId)
+					}
+				}
+				if len(rebalanceHosts) > 0 {
+				}
 			},
 			DeleteFunc: func(obj interface{}) {
 				hosts := make([]string, 1)
@@ -87,7 +130,7 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 					hosts = append(hosts, address.IP)
 				}
 				for _, host := range hosts {
-					loadbalancer.Remove(host)
+					k.loadbalancer.Remove(host)
 				}
 				log.Println("Deleted", hosts, "addresses")
 			},
@@ -98,43 +141,10 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 	if !cache.WaitForCacheSync(stop, controller.HasSynced) {
 		log.Fatal("Timed out waiting for caches to sync")
 	}
-	return &KubernetesRouter{
-		k8sClient:    client,
-		cacheStore:   store,
-		loadbalancer: loadbalancer,
-	}
-}
-
-func (k *KubernetesRouter) Route(recipientId string) string {
-	host := k.loadbalancer.Lookup(recipientId)
-	if host == "" {
-		log.Println("No host found for", recipientId)
-		return ""
-	}
-	log.Println("Host found for", recipientId, host)
-	host = fmt.Sprintf("%s:3000", host)
-	return host
-}
-
-func (k *KubernetesRouter) Add(host []string) {
-	return
-}
-
-func (k *KubernetesRouter) InitializeHosts() error {
-	endpoints := k.cacheStore.List()
-	log.Println("Found", len(endpoints), "endpoints")
-	hosts := make([]string, 0)
-	//Yes lots of duplicate code
-	for _, endpoint := range endpoints {
-		for _, subset := range endpoint.(*v1.Endpoints).Subsets {
-			for _, address := range subset.Addresses {
-				hosts = append(hosts, address.IP)
-			}
-		}
-	}
-	for _, host := range hosts {
-		k.loadbalancer.Add(host)
-	}
-	log.Println("Initialized", hosts, "hosts")
+	k.cacheStore = store
 	return nil
+}
+
+func (k *KubernetesRouter) OnHostRebalance(func()) ([]string, error) {
+	return nil, nil
 }
