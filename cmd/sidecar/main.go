@@ -21,7 +21,9 @@ func main() {
 	userField := "recipientId"
 	port := flag.String("port", "3000", "Port to listen on")
 	targetPort := flag.String("targetPort", "3001", "Port to target")
+	mode := flag.String("mode", "kubernetes", "Mode to use")
 	flag.Parse()
+	proxy.InitializeProxy(*mode)
 
 	log.Printf("Starting server on port %s", *port)
 	//We might need to change for a Counting BloomFilter

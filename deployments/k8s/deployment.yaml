@@ -15,6 +15,7 @@ spec:
       labels:
         app: websocket-operator-controller
     spec:
+      serviceAccountName: websocket-operator-controller
       containers:
       - name: controller
         image: docker.io/lukas8219/websocket-operator-controller:latest  # Update with your image tag
@@ -57,7 +58,6 @@ spec:
       - name: tls-certs
         secret:
           secretName: webhook-tls
-      serviceAccountName: websocket-operator-controller
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -75,6 +75,7 @@ spec:
       labels:
         app: websocket-operator-loadbalancer
     spec:
+      serviceAccountName: loadbalancer-sa
       containers:
       - name: loadbalancer
         envFrom:
@@ -107,4 +108,31 @@ spec:
     protocol: TCP
     name: http
   type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: loadbalancer-sa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: endpoints-reader
+rules:
+- apiGroups: [""]
+  resources: ["endpoints"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: loadbalancer-endpoints-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: endpoints-reader
+subjects:
+- kind: ServiceAccount
+  name: loadbalancer-sa
+  namespace: default
 

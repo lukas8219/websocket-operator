@@ -14,20 +14,19 @@ import (
 )
 
 var (
-	router = *route.NewRouter()
+	router route.RouterImpl
 )
 
-func init() {
-	err := router.InitializeHosts()
-	if err != nil {
-		log.Println(errors.Join(errors.New("failed to initialize hosts"), err))
-	}
+func InitializeLoadBalancer(mode string) {
+	router = route.NewRouter(route.RouterConfig{Mode: route.RouterConfigMode(mode)})
+	router.InitializeHosts()
 }
 
 func main() {
 	port := flag.String("port", "3000", "Port to listen on")
+	mode := flag.String("mode", "kubernetes", "Mode to use")
 	flag.Parse()
-
+	InitializeLoadBalancer(*mode)
 	log.Printf("Starting load balancer server on port %s", *port)
 	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := r.Header.Get("ws-user-id")

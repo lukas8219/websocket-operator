@@ -1,46 +1,26 @@
-package route
+package dns
 
 import (
 	"context"
 	"log"
+	"lukas8219/websocket-operator/internal/rendezvous"
 	"net"
 	"os"
 	"strconv"
 	"time"
-
-	"github.com/dgryski/go-rendezvous"
 )
 
-type Router struct {
-	rendezvous rendezvous.Rendezvous
+type DnsRouter struct {
+	loadbalancer *rendezvous.Rendezvous
 }
 
-func NewRouter() *Router {
-	return &Router{
-		rendezvous: *rendezvous.New([]string{}, func(s string) uint64 {
-			var sum uint64
-			for _, c := range s {
-				sum += uint64(c)
-			}
-			return sum
-		}),
+func WithDns(loadbalancer *rendezvous.Rendezvous) *DnsRouter {
+	return &DnsRouter{
+		loadbalancer,
 	}
 }
 
-func (r *Router) Route(recipientId string) string {
-	return r.rendezvous.Lookup(recipientId)
-}
-
-func (r *Router) Add(host []string) {
-	if r.rendezvous.Lookup(host[0]) != "" {
-		return
-	}
-	for _, host := range host {
-		r.rendezvous.Add(host)
-	}
-}
-
-func (r *Router) InitializeHosts() error {
+func (r *DnsRouter) InitializeHosts() error {
 	srvRecord := os.Getenv("WS_OPERATOR_SRV_DNS_RECORD")
 	if srvRecord == "" {
 		srvRecord = "ws-operator.local"
@@ -49,7 +29,9 @@ func (r *Router) InitializeHosts() error {
 	if err != nil {
 		return err
 	}
-	r.Add(hosts)
+	for _, host := range hosts {
+		r.loadbalancer.Add(host)
+	}
 	return nil
 }
 
@@ -79,7 +61,7 @@ func createResolver() *net.Resolver {
 	return r
 }
 
-func (r *Router) getCurrentHosts(service string) ([]string, error) {
+func (r *DnsRouter) getCurrentHosts(service string) ([]string, error) {
 	resolver := createResolver()
 	log.Println("Getting random SRV host for service:", service)
 	_, addrs, err := resolver.LookupSRV(context.Background(), "", "", service)
@@ -102,4 +84,8 @@ func (r *Router) getCurrentHosts(service string) ([]string, error) {
 	}
 	log.Println("Addrs:", addrPorts)
 	return addrPorts, nil
+}
+
+func (r *DnsRouter) Route(recipientId string) string {
+	return r.loadbalancer.Lookup(recipientId)
 }
