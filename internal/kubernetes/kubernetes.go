@@ -46,8 +46,10 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				hosts := make([]string, 1)
-				for _, address := range obj.(*v1.Endpoints).Subsets[0].Addresses {
-					hosts = append(hosts, address.IP)
+				for _, address := range obj.(*v1.Endpoints).Subsets {
+					for _, address := range address.Addresses {
+						hosts = append(hosts, address.IP)
+					}
 				}
 				for _, host := range hosts {
 					if loadbalancer.Lookup(host) == "" {
@@ -59,14 +61,19 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				hosts := make([]string, 1)
+				//This is nuts, yes. But i'll look into re-writing the Rendezvous to be customized for this use case
 				if len(addedHosts) > 0 {
-					for _, address := range oldObj.(*v1.Endpoints).Subsets[0].Addresses {
-						loadbalancer.Remove(address.IP)
-						delete(addedHosts, address.IP)
+					for _, subset := range oldObj.(*v1.Endpoints).Subsets {
+						for _, address := range subset.Addresses {
+							loadbalancer.Remove(address.IP)
+							delete(addedHosts, address.IP)
+						}
 					}
 				}
-				for _, address := range newObj.(*v1.Endpoints).Subsets[0].Addresses {
-					hosts = append(hosts, address.IP)
+				for _, subset := range newObj.(*v1.Endpoints).Subsets {
+					for _, address := range subset.Addresses {
+						hosts = append(hosts, address.IP)
+					}
 				}
 				for _, host := range hosts {
 					loadbalancer.Add(host)
@@ -117,9 +124,12 @@ func (k *KubernetesRouter) InitializeHosts() error {
 	endpoints := k.cacheStore.List()
 	log.Println("Found", len(endpoints), "endpoints")
 	hosts := make([]string, 0)
+	//Yes lots of duplicate code
 	for _, endpoint := range endpoints {
-		for _, address := range endpoint.(*v1.Endpoints).Subsets[0].Addresses {
-			hosts = append(hosts, address.IP)
+		for _, subset := range endpoint.(*v1.Endpoints).Subsets {
+			for _, address := range subset.Addresses {
+				hosts = append(hosts, address.IP)
+			}
 		}
 	}
 	for _, host := range hosts {
