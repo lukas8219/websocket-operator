@@ -6,7 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dgryski/go-rendezvous"
+	"lukas8219/websocket-operator/internal/rendezvous"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
@@ -20,6 +21,10 @@ type KubernetesRouter struct {
 	cacheStore   cache.Store
 	loadbalancer *rendezvous.Rendezvous
 }
+
+var (
+	addedHosts = make(map[string]bool)
+)
 
 func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 	config, err := rest.InClusterConfig()
@@ -45,17 +50,27 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 					hosts = append(hosts, address.IP)
 				}
 				for _, host := range hosts {
-					loadbalancer.Add(host)
+					if loadbalancer.Lookup(host) == "" {
+						loadbalancer.Add(host)
+						addedHosts[host] = true
+					}
 				}
 				log.Println("Added", hosts, "addresses")
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				hosts := make([]string, 1)
+				if len(addedHosts) > 0 {
+					for _, address := range oldObj.(*v1.Endpoints).Subsets[0].Addresses {
+						loadbalancer.Remove(address.IP)
+						delete(addedHosts, address.IP)
+					}
+				}
 				for _, address := range newObj.(*v1.Endpoints).Subsets[0].Addresses {
 					hosts = append(hosts, address.IP)
 				}
 				for _, host := range hosts {
 					loadbalancer.Add(host)
+					addedHosts[host] = true
 				}
 				log.Println("Updated", hosts, "addresses")
 			},
@@ -75,9 +90,6 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 	go controller.Run(stop)
 	if !cache.WaitForCacheSync(stop, controller.HasSynced) {
 		log.Fatal("Timed out waiting for caches to sync")
-	}
-	if err != nil {
-		log.Println("Failed to resync cache", err)
 	}
 	return &KubernetesRouter{
 		k8sClient:    client,

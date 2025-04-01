@@ -5,7 +5,7 @@ import (
 
 	"lukas8219/websocket-operator/internal/dns"
 
-	"github.com/dgryski/go-rendezvous"
+	"lukas8219/websocket-operator/internal/rendezvous"
 
 	"github.com/twmb/murmur3"
 )

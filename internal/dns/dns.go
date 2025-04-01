@@ -3,12 +3,11 @@ package dns
 import (
 	"context"
 	"log"
+	"lukas8219/websocket-operator/internal/rendezvous"
 	"net"
 	"os"
 	"strconv"
 	"time"
-
-	"github.com/dgryski/go-rendezvous"
 )
 
 type DnsRouter struct {
