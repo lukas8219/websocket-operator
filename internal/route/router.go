@@ -13,7 +13,7 @@ import (
 type RouterImpl interface {
 	InitializeHosts() error
 	Route(recipientId string) string
-	OnHostRebalance(func()) ([]string, error)
+	OnHostRebalance(func([]string) error)
 }
 
 type RouterConfigMode string

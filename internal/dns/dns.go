@@ -90,7 +90,7 @@ func (r *DnsRouter) Route(recipientId string) string {
 	return r.loadbalancer.Lookup(recipientId)
 }
 
-func (r *DnsRouter) OnHostRebalance(func()) ([]string, error) {
+func (r *DnsRouter) OnHostRebalance(func([]string) error) {
 	//DNS based loadbalancer doesn't need to do anything
-	return nil, nil
+	return
 }

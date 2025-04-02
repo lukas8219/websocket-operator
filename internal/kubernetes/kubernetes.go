@@ -20,7 +20,7 @@ type KubernetesRouter struct {
 	k8sClient                   *kubernetes.Clientset
 	cacheStore                  cache.Store
 	loadbalancer                *rendezvous.Rendezvous
-	rebalancedHostTrigger       func([]string) error
+	rebalancedHostTrigger       []func([]string) error
 	alreadyCalculatedRecipients map[string]string
 	handleUpdatedEndpoints      func([]string)
 	handleCreatedEnpoints       func([]string)
@@ -37,6 +37,7 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 		k8sClient:                   client,
 		alreadyCalculatedRecipients: make(map[string]string),
 		loadbalancer:                loadbalancer,
+		rebalancedHostTrigger:       make([]func([]string) error, 0),
 	}
 }
 
@@ -56,7 +57,7 @@ func createClient() *kubernetes.Clientset {
 func (k *KubernetesRouter) Route(recipientId string) string {
 	host := k.loadbalancer.Lookup(recipientId)
 	if host == "" {
-		log.Println("No host found for", recipientId)
+		log.Println("No host found for", recipientId, "out of", k.loadbalancer.GetNodes())
 		return ""
 	}
 	k.alreadyCalculatedRecipients[recipientId] = host
@@ -117,11 +118,10 @@ func (k *KubernetesRouter) InitializeHosts() error {
 				rebalanceHosts := make([]string, 0)
 				//re-calculate computed recipients to check re-balancing
 				for recipientId, _ := range k.alreadyCalculatedRecipients {
-					if k.loadbalancer.HasNode(recipientId) {
-						rebalanceHosts = append(rebalanceHosts, recipientId)
-					}
+					rebalanceHosts = append(rebalanceHosts, recipientId)
 				}
 				if len(rebalanceHosts) > 0 {
+					k.triggerRebalance(rebalanceHosts)
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
@@ -145,6 +145,20 @@ func (k *KubernetesRouter) InitializeHosts() error {
 	return nil
 }
 
-func (k *KubernetesRouter) OnHostRebalance(func()) ([]string, error) {
-	return nil, nil
+func (k *KubernetesRouter) triggerRebalance(hosts []string) error {
+	if k.rebalancedHostTrigger == nil {
+		return nil
+	}
+
+	for _, fn := range k.rebalancedHostTrigger {
+		err := fn(hosts)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (k *KubernetesRouter) OnHostRebalance(fn func([]string) error) {
+	k.rebalancedHostTrigger = append(k.rebalancedHostTrigger, fn)
 }
