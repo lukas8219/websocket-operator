@@ -64,7 +64,9 @@ func main() {
 		connectionTracker.upstreamConn = proxiedCon
 
 		router.OnHostRebalance(func(hosts []string) error {
+			log.Println("OnHostRebalance", hosts)
 			for _, affectedHost := range hosts {
+				log.Println("Checking host", affectedHost, "versus", connectionTracker.upstreamHost)
 				if connectionTracker.upstreamHost == affectedHost {
 					connectionTracker.upstreamConn.Close()
 					newHost := router.Route(user)
@@ -113,7 +115,6 @@ func handleIncomingMessagesToProxy(connectionTracker *ConnectionTracker) {
 			log.Println("Client closed connection")
 			return
 		}
-		log.Println("Proxied client message")
 	}
 }
 
@@ -127,7 +128,7 @@ func connectToUpstreamAndProxyMessages(connectionTracker *ConnectionTracker, use
 	if err != nil {
 		log.Println(errors.Join(errors.New("failed to dial upstream"), err))
 		if connectionTracker.upstreamConn != nil {
-			connectionTracker.Close()
+			connectionTracker.upstreamConn.Close()
 		}
 		return nil, err
 	}
@@ -151,7 +152,6 @@ func connectToUpstreamAndProxyMessages(connectionTracker *ConnectionTracker, use
 				log.Println("Server closed connection")
 				return
 			}
-			log.Println("Proxied server message")
 		}
 	}
 	go proxySidecarServerToClient(proxiedConn, connectionTracker.downstreamConn)

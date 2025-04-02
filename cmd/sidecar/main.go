@@ -138,7 +138,6 @@ func main() {
 					log.Println("Client closed connection")
 					return
 				}
-				log.Println("Proxied client message")
 			}
 		}
 		proxySidecarServerToClient := func(serverConnection net.Conn, targetConnection net.Conn) {
@@ -160,7 +159,6 @@ func main() {
 					log.Println("Server closed connection")
 					return
 				}
-				log.Println("Proxied server message")
 			}
 		}
 		go proxySidecarServerToClient(proxiedConn, clientConn)

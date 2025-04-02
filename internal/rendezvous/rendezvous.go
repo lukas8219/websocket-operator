@@ -29,7 +29,6 @@ func New(nodes []string, hash Hasher) *Rendezvous {
 }
 
 func (r *Rendezvous) Lookup(k string) string {
-	// short-circuit if we're empty
 	if len(r.nodes) == 0 {
 		return ""
 	}
@@ -70,6 +69,10 @@ func (r *Rendezvous) Remove(node string) {
 	// find index of node to remove
 	nidx := r.nodes[node]
 	last := len(r.nstr) - 1
+
+	if last < 0 {
+		return
+	}
 
 	// if not removing last node, swap last into nidx
 	if nidx != last {

@@ -80,10 +80,12 @@ func (k *KubernetesRouter) InitializeHosts() error {
 		ObjectType:    &v1.Endpoints{},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				hosts := make([]string, 1)
+				hosts := make([]string, 0)
 				for _, address := range obj.(*v1.Endpoints).Subsets {
 					for _, address := range address.Addresses {
-						hosts = append(hosts, address.IP)
+						if address.IP != "" {
+							hosts = append(hosts, address.IP)
+						}
 					}
 				}
 				for _, host := range hosts {
@@ -117,10 +119,14 @@ func (k *KubernetesRouter) InitializeHosts() error {
 				log.Println("Updated", hosts, "addresses")
 				rebalanceHosts := make([]string, 0)
 				//re-calculate computed recipients to check re-balancing
-				for recipientId, _ := range k.alreadyCalculatedRecipients {
-					rebalanceHosts = append(rebalanceHosts, recipientId)
+				log.Println("Already calculated recipients", k.alreadyCalculatedRecipients)
+				for recipientId, host := range k.alreadyCalculatedRecipients {
+					if k.loadbalancer.Lookup(recipientId) != host {
+						rebalanceHosts = append(rebalanceHosts, fmt.Sprintf("%s:3000", host))
+					}
 				}
 				if len(rebalanceHosts) > 0 {
+					log.Println("Rebalancing hosts", rebalanceHosts)
 					k.triggerRebalance(rebalanceHosts)
 				}
 			},
@@ -147,6 +153,7 @@ func (k *KubernetesRouter) InitializeHosts() error {
 
 func (k *KubernetesRouter) triggerRebalance(hosts []string) error {
 	if k.rebalancedHostTrigger == nil {
+		log.Println("No rebalance trigger found")
 		return nil
 	}
 
