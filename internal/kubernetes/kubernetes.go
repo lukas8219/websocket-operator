@@ -2,7 +2,7 @@ package kubernetes
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -48,21 +48,21 @@ func createClient() *kubernetes.Clientset {
 			os.Getenv("HOME"), ".kube", "config",
 		)
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-		log.Println("Failed to get in-cluster config, using empty config")
+		slog.Info("Failed to get in-cluster config, using empty config")
 	}
 
 	return kubernetes.NewForConfigOrDie(config)
 }
 
 func (k *KubernetesRouter) Route(recipientId string) string {
-	log.Println("Looking up", recipientId, "in", k.loadbalancer.GetNodes())
+	slog.Debug("Looking up", "recipientId", recipientId, "nodes", k.loadbalancer.GetNodes())
 	host := k.loadbalancer.Lookup(recipientId)
 	if host == "" {
-		log.Println("No host found for", recipientId, "out of", k.loadbalancer.GetNodes())
+		slog.Debug("No host found", "recipientId", recipientId, "nodes", k.loadbalancer.GetNodes())
 		return ""
 	}
 	k.alreadyCalculatedRecipients[recipientId] = host
-	log.Println("Host found for", recipientId, host)
+	slog.Debug("Host found", "recipientId", recipientId, "host", host)
 	host = fmt.Sprintf("%s:3000", host)
 	return host
 }
@@ -93,7 +93,7 @@ func (k *KubernetesRouter) InitializeHosts() error {
 					k.loadbalancer.Add(host)
 					addedHosts[host] = true
 				}
-				log.Println("Added", hosts, "addresses")
+				slog.Info("Added addresses", "hosts", hosts)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				hosts := make([]string, 0)
@@ -115,13 +115,13 @@ func (k *KubernetesRouter) InitializeHosts() error {
 					k.loadbalancer.Add(host)
 					addedHosts[host] = true
 				}
-				log.Println("Updated", hosts, "addresses")
+				slog.Info("Updated addresses", "hosts", hosts)
 				rebalanceHosts := make([][2]string, 0)
 				//re-calculate computed recipients to check re-balancing
-				log.Println("Already calculated recipients", k.alreadyCalculatedRecipients)
+				slog.Debug("Already calculated recipients", "recipients", k.alreadyCalculatedRecipients)
 				for recipientId, host := range k.alreadyCalculatedRecipients {
 					newlyCalculatedHost := k.loadbalancer.Lookup(recipientId)
-					log.Println("Checking", recipientId, "against", host, "newly calculated", newlyCalculatedHost)
+					slog.Debug("Checking rebalance", "recipientId", recipientId, "oldHost", host, "newHost", newlyCalculatedHost)
 					if newlyCalculatedHost != host {
 						hostWithPort := fmt.Sprintf("%s:3000", host)
 						newlyCalculatedHostWithPort := fmt.Sprintf("%s:3000", newlyCalculatedHost)
@@ -129,10 +129,10 @@ func (k *KubernetesRouter) InitializeHosts() error {
 					}
 				}
 				if len(rebalanceHosts) > 0 {
-					log.Println("Rebalancing hosts", rebalanceHosts)
+					slog.Info("Rebalancing hosts", "hosts", rebalanceHosts)
 					k.triggerRebalance(rebalanceHosts)
 				} else {
-					log.Println("No rebalancing hosts found", rebalanceHosts)
+					slog.Debug("No rebalancing hosts found", "hosts", rebalanceHosts)
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
@@ -143,14 +143,15 @@ func (k *KubernetesRouter) InitializeHosts() error {
 				for _, host := range hosts {
 					k.loadbalancer.Remove(host)
 				}
-				log.Println("Deleted", hosts, "addresses")
+				slog.Info("Deleted addresses", "hosts", hosts)
 			},
 		},
 	})
 	stop := make(chan struct{})
 	go controller.Run(stop)
 	if !cache.WaitForCacheSync(stop, controller.HasSynced) {
-		log.Fatal("Timed out waiting for caches to sync")
+		slog.Error("Timed out waiting for caches to sync")
+		return fmt.Errorf("timed out waiting for caches to sync")
 	}
 	k.cacheStore = store
 	return nil
@@ -158,7 +159,7 @@ func (k *KubernetesRouter) InitializeHosts() error {
 
 func (k *KubernetesRouter) triggerRebalance(hosts [][2]string) error {
 	if k.rebalancedHostTrigger == nil {
-		log.Println("No rebalance trigger found")
+		slog.Debug("No rebalance trigger found")
 		return nil
 	}
 
