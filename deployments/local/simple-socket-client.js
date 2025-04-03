@@ -1,9 +1,48 @@
 // Note: For Node.js environments, you'll need to install ws: npm install ws
 // Browser environments can use the native WebSocket API directly
 const WebSocket = require('ws');
+const yargs = require('yargs');
+const { hideBin } = require('yargs/helpers');
+const readline = require('readline');
+
+// Create readline interface for reading from stdin
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+  prompt: '> '
+});
+
+// Function to handle sending messages from stdin
+function setupStdinMessageHandler(socket, recipientId, user) {
+  rl.on('line', (line) => {
+    if (line.trim()) {
+      const message = JSON.stringify({
+        message: line,
+        recipientId: String(recipientId),
+        from: String(user)
+      });
+      
+      console.log(`Sending: ${message}`);
+      socket.send(message);
+    }
+    rl.prompt();
+  });
+  
+  rl.on('close', () => {
+    console.log('Stdin closed. Disconnecting...');
+    socket.close();
+    process.exit(0);
+  });
+}
 
 
-const [,,user, recipientId, targetPort=3000, duration=30000, interval=3000] = process.argv;
+const argv = yargs(hideBin(process.argv)).argv;
+
+const targetPort = argv.port || 3000;
+const user = argv.user || "1";
+const recipientId = argv.recipientId || "recipient";
+const duration = argv.duration || 30000;
+const autoPublish = argv.autoPublish
 
 // Server URL to connect to - change this to your WebSocket server address
 // Note: WebSockets use ws:// or wss:// protocol instead of http:// or https://
@@ -18,18 +57,22 @@ const socket = new WebSocket(SERVER_URL, { headers: { "ws-user-id": user } });
 socket.on('open', () => {
   console.log("Connected to WebSocket server");
   
-  const hiInterval = setInterval(() => {
-    const message = JSON.stringify({ message: "HI", recipientId: recipientId, from: user });
-    console.log(`Sent ${message} to server`);
-    socket.send(message);  
-  }, interval);
-
-  setTimeout(() => {
-    clearInterval(hiInterval);
-    console.log("Disconnecting...");
-    socket.close();
-  }, Number(duration))
+  if (autoPublish === "1") {
+    const hiInterval = setInterval(() => {
+      const message = JSON.stringify({ message: "HI", recipientId: String(recipientId), from: String(user) });
+      console.log(`Sent ${message} to server`);
+      socket.send(message);  
+    }, 3000);
+  
+    setTimeout(() => {
+      clearInterval(hiInterval);
+      console.log("Disconnecting...");
+      socket.close();
+    }, Number(duration))
+  }
 })
+
+setupStdinMessageHandler(socket, recipientId, user);
 
 // Handle errors
 socket.on('error', (error) => {

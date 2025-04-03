@@ -30,6 +30,16 @@
             "console": "integratedTerminal"
         },
         {
+            "name": "Debug LoadBalancer",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/loadbalancer/main.go",
+            "cwd": "${workspaceFolder}",
+            "output": "debug",
+            "console": "integratedTerminal"
+        },
+        {
             "name": "Debug CoreDNS Operator (Configurable Ports)",
             "type": "go",
             "request": "launch",
@@ -60,6 +70,19 @@
             "type": "promptString",
             "description": "Service Target Port",
             "default": "3000"
+        },
+        {
+            "id": "loadBalancerPort",
+            "type": "promptString",
+            "description": "Load Balancer Port",
+            "default": "3000"
+        },
+        {
+            "id": "loadBalancerMode",
+            "type": "pickString",
+            "description": "Load Balancer Mode",
+            "options": ["kubernetes", "local"],
+            "default": "local"
         }
     ]
 } 

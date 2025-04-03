@@ -129,7 +129,15 @@ func main() {
 					}
 					continue
 				}
-				err = wsutil.WriteClientMessage(targetConnection, op, msg)
+
+				//Might need to handle Close here
+
+				recipientConnection := connections[recipientIdString]
+				if recipientConnection == nil {
+					log.Println("No connection found for", recipientIdString)
+					continue
+				}
+				err = wsutil.WriteClientMessage(recipientConnection, op, msg)
 				if err != nil {
 					log.Println(errors.Join(err, errors.New("failed to write to client")))
 					return
@@ -138,7 +146,6 @@ func main() {
 					log.Println("Client closed connection")
 					return
 				}
-				log.Println("Proxied client message")
 			}
 		}
 		proxySidecarServerToClient := func(serverConnection net.Conn, targetConnection net.Conn) {
@@ -150,6 +157,9 @@ func main() {
 					log.Println(errors.Join(err, errors.New("failed to read from server")))
 					return
 				}
+
+				//TODO: we might need to handle `recipientId` routing messages here also
+
 				//Write as client - to the proxied connection
 				err = wsutil.WriteServerMessage(targetConnection, op, msg)
 				if err != nil {
@@ -160,7 +170,6 @@ func main() {
 					log.Println("Server closed connection")
 					return
 				}
-				log.Println("Proxied server message")
 			}
 		}
 		go proxySidecarServerToClient(proxiedConn, clientConn)
