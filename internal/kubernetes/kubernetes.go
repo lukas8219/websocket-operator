@@ -20,7 +20,7 @@ type KubernetesRouter struct {
 	k8sClient                   *kubernetes.Clientset
 	cacheStore                  cache.Store
 	loadbalancer                *rendezvous.Rendezvous
-	rebalancedHostTrigger       []func([]string) error
+	rebalancedHostTrigger       []func([][2]string) error
 	alreadyCalculatedRecipients map[string]string
 	handleUpdatedEndpoints      func([]string)
 	handleCreatedEnpoints       func([]string)
@@ -37,7 +37,7 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 		k8sClient:                   client,
 		alreadyCalculatedRecipients: make(map[string]string),
 		loadbalancer:                loadbalancer,
-		rebalancedHostTrigger:       make([]func([]string) error, 0),
+		rebalancedHostTrigger:       make([]func([][2]string) error, 0),
 	}
 }
 
@@ -55,6 +55,7 @@ func createClient() *kubernetes.Clientset {
 }
 
 func (k *KubernetesRouter) Route(recipientId string) string {
+	log.Println("Looking up", recipientId, "in", k.loadbalancer.GetNodes())
 	host := k.loadbalancer.Lookup(recipientId)
 	if host == "" {
 		log.Println("No host found for", recipientId, "out of", k.loadbalancer.GetNodes())
@@ -89,15 +90,13 @@ func (k *KubernetesRouter) InitializeHosts() error {
 					}
 				}
 				for _, host := range hosts {
-					if k.loadbalancer.Lookup(host) == "" {
-						k.loadbalancer.Add(host)
-						addedHosts[host] = true
-					}
+					k.loadbalancer.Add(host)
+					addedHosts[host] = true
 				}
 				log.Println("Added", hosts, "addresses")
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				hosts := make([]string, 1)
+				hosts := make([]string, 0)
 				//This is nuts, yes. But i'll look into re-writing the Rendezvous to be customized for this use case
 				if len(addedHosts) > 0 {
 					for _, subset := range oldObj.(*v1.Endpoints).Subsets {
@@ -117,17 +116,23 @@ func (k *KubernetesRouter) InitializeHosts() error {
 					addedHosts[host] = true
 				}
 				log.Println("Updated", hosts, "addresses")
-				rebalanceHosts := make([]string, 0)
+				rebalanceHosts := make([][2]string, 0)
 				//re-calculate computed recipients to check re-balancing
 				log.Println("Already calculated recipients", k.alreadyCalculatedRecipients)
 				for recipientId, host := range k.alreadyCalculatedRecipients {
-					if k.loadbalancer.Lookup(recipientId) != host {
-						rebalanceHosts = append(rebalanceHosts, fmt.Sprintf("%s:3000", host))
+					newlyCalculatedHost := k.loadbalancer.Lookup(recipientId)
+					log.Println("Checking", recipientId, "against", host, "newly calculated", newlyCalculatedHost)
+					if newlyCalculatedHost != host {
+						hostWithPort := fmt.Sprintf("%s:3000", host)
+						newlyCalculatedHostWithPort := fmt.Sprintf("%s:3000", newlyCalculatedHost)
+						rebalanceHosts = append(rebalanceHosts, [2]string{hostWithPort, newlyCalculatedHostWithPort})
 					}
 				}
 				if len(rebalanceHosts) > 0 {
 					log.Println("Rebalancing hosts", rebalanceHosts)
 					k.triggerRebalance(rebalanceHosts)
+				} else {
+					log.Println("No rebalancing hosts found", rebalanceHosts)
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
@@ -151,7 +156,7 @@ func (k *KubernetesRouter) InitializeHosts() error {
 	return nil
 }
 
-func (k *KubernetesRouter) triggerRebalance(hosts []string) error {
+func (k *KubernetesRouter) triggerRebalance(hosts [][2]string) error {
 	if k.rebalancedHostTrigger == nil {
 		log.Println("No rebalance trigger found")
 		return nil
@@ -166,6 +171,6 @@ func (k *KubernetesRouter) triggerRebalance(hosts []string) error {
 	return nil
 }
 
-func (k *KubernetesRouter) OnHostRebalance(fn func([]string) error) {
+func (k *KubernetesRouter) OnHostRebalance(fn func([][2]string) error) {
 	k.rebalancedHostTrigger = append(k.rebalancedHostTrigger, fn)
 }

@@ -11,6 +11,7 @@
   "description": "",
   "dependencies": {
     "socket.io-client": "^4.8.1",
-    "ws": "^8.18.1"
+    "ws": "^8.18.1",
+    "yargs": "^17.7.2"
   }
 }

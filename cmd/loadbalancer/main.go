@@ -8,6 +8,7 @@ import (
 	"lukas8219/websocket-operator/internal/route"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
@@ -23,11 +24,12 @@ func InitializeLoadBalancer(mode string) {
 }
 
 type ConnectionTracker struct {
-	upstreamHost    string
-	upstreamConn    net.Conn
-	downstreamConn  net.Conn
-	upstreamContext context.Context
-	upstreamCancel  context.CancelFunc
+	upstreamHost           string
+	upstreamConn           net.Conn
+	downstreamConn         net.Conn
+	cancelUpstream         context.CancelFunc
+	upstreamContext        context.Context
+	upstreamCancellingChan chan int
 }
 
 func main() {
@@ -58,33 +60,45 @@ func main() {
 			return
 		}
 
-		log.Println("Dialing upstream", host)
 		connectionTracker := &ConnectionTracker{
 			upstreamHost:   host,
 			downstreamConn: clientConn,
 		}
 
+		connectionTracker.upstreamContext, connectionTracker.cancelUpstream = context.WithCancel(context.Background())
 		proxiedCon, err := connectToUpstreamAndProxyMessages(connectionTracker, user)
 		connectionTracker.upstreamConn = proxiedCon
-		connectionTracker.upstreamContext, connectionTracker.upstreamCancel = context.WithCancel(context.Background())
+		connectionTracker.upstreamCancellingChan = make(chan int, 1)
 
-		router.OnHostRebalance(func(hosts []string) error {
+		router.OnHostRebalance(func(hosts [][2]string) error {
 			log.Println("OnHostRebalance", hosts)
 			for _, affectedHost := range hosts {
-				log.Println("Checking host", affectedHost, "versus", connectionTracker.upstreamHost)
-				if connectionTracker.upstreamHost == affectedHost {
-					connectionTracker.upstreamCancel()
-					connectionTracker.upstreamConn.Close()
-					newHost := router.Route(user)
+				oldHost := affectedHost[0]
+				newHost := affectedHost[1]
+				log.Println("Checking host", oldHost, "versus", connectionTracker.upstreamHost)
+				if connectionTracker.upstreamHost == oldHost {
+					log.Println("Rebalancing connection from", oldHost, "to", newHost)
+					connectionTracker.cancelUpstream()
 					connectionTracker.upstreamHost = newHost
+
+					log.Println("Waiting for upstream to cancel", oldHost)
+					select {
+					case <-connectionTracker.upstreamCancellingChan:
+						log.Println("Successfully received cancellation signal")
+					case <-time.After(5 * time.Second):
+						log.Println("Timeout waiting for upstream cancellation, proceeding anyway")
+					}
+
 					log.Println("Rebalancing host", host, "to", newHost)
+					connectionTracker.upstreamContext, connectionTracker.cancelUpstream = context.WithCancel(context.Background())
+					connectionTracker.upstreamCancellingChan = make(chan int, 1)
 					_, err = connectToUpstreamAndProxyMessages(connectionTracker, user)
-					connectionTracker.upstreamContext, connectionTracker.upstreamCancel = context.WithCancel(context.Background())
 					if err != nil {
 						log.Println(errors.Join(err, errors.New("failed to reconnect to upstream")))
 						connectionTracker.Close()
 						return err
 					}
+					break
 				}
 			}
 			return nil
@@ -108,7 +122,7 @@ func handleIncomingMessagesToProxy(connectionTracker *ConnectionTracker) {
 		upstreamConnection := connectionTracker.upstreamConn
 		msg, op, err := wsutil.ReadClientData(clientConnection)
 		if err != nil {
-			log.Println(errors.Join(err, errors.New("failed to read from client")))
+			log.Println(errors.Join(err, errors.New("failed to read from downstream")))
 			return
 		}
 		select {
@@ -119,11 +133,11 @@ func handleIncomingMessagesToProxy(connectionTracker *ConnectionTracker) {
 			//TODO: SEGFAULT here in case upstreamConnection is nil - due to failure or whatever. network delays could cause this
 			err = wsutil.WriteClientMessage(upstreamConnection, op, msg)
 			if err != nil {
-				log.Println(errors.Join(err, errors.New("failed to write to client")))
+				log.Println(errors.Join(err, errors.New("failed to write to upstream")))
 				return
 			}
 			if op == ws.OpClose {
-				log.Println("Client closed connection")
+				log.Println("downstream server closed connection")
 				return
 			}
 		}
@@ -132,48 +146,60 @@ func handleIncomingMessagesToProxy(connectionTracker *ConnectionTracker) {
 
 // TODO
 func connectToUpstreamAndProxyMessages(connectionTracker *ConnectionTracker, user string) (net.Conn, error) {
+	host := connectionTracker.upstreamHost
 	dialer := ws.Dialer{
 		Header: ws.HandshakeHeaderHTTP{
 			"ws-user-id": []string{user},
 		},
 	}
-	log.Println("Dialing upstream", connectionTracker.upstreamHost)
-	proxiedConn, _, _, err := dialer.Dial(context.Background(), "ws://"+connectionTracker.upstreamHost)
+	log.Println("Dialing upstream", host)
+	proxiedConn, _, _, err := dialer.Dial(connectionTracker.upstreamContext, "ws://"+host)
 	if err != nil {
 		log.Println(errors.Join(errors.New("failed to dial upstream"), err))
-		if connectionTracker.upstreamConn != nil {
-			connectionTracker.upstreamConn.Close()
-		}
 		return nil, err
 	}
+	log.Println("Connected to upstream", host)
 	connectionTracker.upstreamConn = proxiedConn
+
+	waitSignal := func() {
+		log.Println("Closing upstream connection", host)
+		select {
+		case connectionTracker.upstreamCancellingChan <- 1:
+			log.Println("Successfully signaled cancellation")
+		default:
+			log.Println("No one waiting for cancellation signal, skipping")
+		}
+	}
+
 	//Missing DEFER
-	proxySidecarServerToClient := func(serverConnection net.Conn, targetConnection net.Conn) {
+	proxySidecarServerToClient := func() {
+		defer waitSignal()
 		for {
 			select {
 			case <-connectionTracker.upstreamContext.Done():
-				log.Println("Upstream context done")
+				log.Println("Upstream context done", host)
+				proxiedConn.Close()
 				return
 			default:
 				//Read as client - from the server.
-				msg, op, err := wsutil.ReadServerData(serverConnection)
+				msg, op, err := wsutil.ReadServerData(proxiedConn)
 				if err != nil {
-					log.Println(errors.Join(err, errors.New("failed to read from server")))
+					log.Println(errors.Join(err, errors.New("failed to read from upstream"+host)))
 					return
 				}
 				//Write as client - to the proxied connection
-				err = wsutil.WriteServerMessage(targetConnection, op, msg)
+				err = wsutil.WriteServerMessage(connectionTracker.downstreamConn, op, msg)
 				if err != nil {
-					log.Println(errors.Join(err, errors.New("failed to write to client")))
+					log.Println(errors.Join(err, errors.New("failed to write to downstream")))
 					return
 				}
 				if op == ws.OpClose {
-					log.Println("Server closed connection")
+					log.Println("upstream server closed connection", host)
 					return
 				}
 			}
 		}
 	}
-	go proxySidecarServerToClient(proxiedConn, connectionTracker.downstreamConn)
+	go proxySidecarServerToClient()
 	return proxiedConn, nil
 }

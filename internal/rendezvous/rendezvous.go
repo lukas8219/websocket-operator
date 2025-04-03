@@ -1,98 +1,161 @@
-// Straight copy from https://github.com/dgryski/go-rendezvous
-// I'll need to tweak it in many places
 package rendezvous
 
-type Rendezvous struct {
-	nodes map[string]int
-	nstr  []string
-	nhash []uint64
-	hash  Hasher
+import (
+	"math"
+	"sync"
+
+	"github.com/buraksezer/consistent"
+	"github.com/zeebo/xxh3"
+)
+
+var FiftyThreeOnes = uint64(0xFFFFFFFFFFFFFFFF >> (64 - 53))
+var FiftyThreeZeros = float64(1 << 53)
+
+var ErrInsufficientMemberCount = consistent.ErrInsufficientMemberCount
+
+type Hasher consistent.Hasher
+
+type DefaultHasher struct {
 }
 
-type Hasher func(s string) uint64
+func (h *DefaultHasher) Sum64(b []byte) uint64 {
+	return xxh3.Hash(b)
+}
 
-func New(nodes []string, hash Hasher) *Rendezvous {
+type WeightedMember struct {
+	member string
+	weight float64
+}
+
+// Config represents a structure to control the rendezvous package.
+type Config struct {
+	Hasher Hasher
+}
+
+// Rendezvous holds the information about the members of the consistent hash circle.
+type Rendezvous struct {
+	mu sync.RWMutex
+
+	config  Config
+	hasher  Hasher
+	members map[string]*WeightedMember
+	ring    map[uint64]*WeightedMember
+}
+
+// New creates and returns a new Rendezvous object
+func New(members []WeightedMember, config Config) *Rendezvous {
 	r := &Rendezvous{
-		nodes: make(map[string]int, len(nodes)),
-		nstr:  make([]string, len(nodes)),
-		nhash: make([]uint64, len(nodes)),
-		hash:  hash,
+		config:  config,
+		members: make(map[string]*WeightedMember),
+		ring:    make(map[uint64]*WeightedMember),
 	}
 
-	for i, n := range nodes {
-		r.nodes[n] = i
-		r.nstr[i] = n
-		r.nhash[i] = hash(n)
+	if config.Hasher == nil {
+		// Use the Default Hasher
+		r.hasher = &DefaultHasher{}
+	} else {
+		r.hasher = config.Hasher
 	}
-
+	for _, member := range members {
+		r.add(member)
+	}
 	return r
 }
 
-func (r *Rendezvous) Lookup(k string) string {
-	if len(r.nodes) == 0 {
-		return ""
-	}
+func NewDefault() *Rendezvous {
+	return New([]WeightedMember{}, Config{})
+}
 
-	khash := r.hash(k)
+// IntToFloat is a golang port of the python implementation mentioned here
+// https://en.wikipedia.org/wiki/Rendezvous_hashing#Weighted_rendezvous_hash
+func IntToFloat(value uint64) (float_value float64) {
+	return float64((value & FiftyThreeOnes)) / FiftyThreeZeros
+}
 
-	var midx int
-	var mhash = xorshiftMult64(khash ^ r.nhash[0])
+func (r *Rendezvous) ComputeWeightedScore(m WeightedMember, key []byte) (score float64) {
+	hash := r.hasher.Sum64(append([]byte(m.member), key...))
+	score = 1.0 / math.Log(IntToFloat(hash))
+	return m.weight * score
+}
 
-	for i, nhash := range r.nhash[1:] {
-		if h := xorshiftMult64(khash ^ nhash); h > mhash {
-			midx = i + 1
-			mhash = h
+func (r *Rendezvous) LocateKey(key []byte) (member WeightedMember) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	lowest_score := 1.0
+	for _, _member := range r.members {
+		score := r.ComputeWeightedScore(*_member, key)
+		if score < lowest_score {
+			lowest_score = score
+			member = *_member
 		}
 	}
+	return member
+}
 
-	return r.nstr[midx]
+func (r *Rendezvous) Lookup(node string) string {
+	foundNode := r.LocateKey([]byte(node))
+	return foundNode.member
+}
+
+type byScore []struct {
+	string
+	float64
+}
+
+func (scores byScore) Len() int {
+	return len(scores)
+}
+
+func (scores byScore) Swap(i, j int) {
+	scores[i], scores[j] = scores[j], scores[i]
+}
+
+func (scores byScore) Less(i, j int) bool {
+	return scores[i].float64 < scores[j].float64
+}
+
+func (r *Rendezvous) add(member WeightedMember) {
+	r.members[member.member] = &member
+}
+
+func (r *Rendezvous) AddMember(member WeightedMember) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.members[member.member]; ok {
+		// We already have this member. Quit immediately.
+		return
+	}
+	r.add(member)
 }
 
 func (r *Rendezvous) Add(node string) {
-	r.nodes[node] = len(r.nstr)
-	r.nstr = append(r.nstr, node)
-	r.nhash = append(r.nhash, r.hash(node))
+	r.AddMember(WeightedMember{
+		member: node,
+		weight: 1.0,
+	})
 }
 
-func (r *Rendezvous) HasNode(node string) bool {
-	return r.nodes[node] != 0
-}
+func (r *Rendezvous) Remove(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-func (r *Rendezvous) GetNodes() []string {
-	return r.nstr
-}
-
-func (r *Rendezvous) Remove(node string) {
-	if len(r.nodes) == 0 {
-		return
-	}
-	// find index of node to remove
-	nidx := r.nodes[node]
-	last := len(r.nstr) - 1
-
-	if last < 0 {
+	if _, ok := r.members[name]; !ok {
+		// There is no member with that name. Quit immediately.
 		return
 	}
 
-	// if not removing last node, swap last into nidx
-	if nidx != last {
-		r.nstr[nidx] = r.nstr[last]
-		r.nhash[nidx] = r.nhash[last]
-		moved := r.nstr[nidx]
-		r.nodes[moved] = nidx
-	}
-
-	// truncate slices
-	r.nstr = r.nstr[:last]
-	r.nhash = r.nhash[:last]
-
-	// delete from map
-	delete(r.nodes, node)
+	delete(r.members, name)
 }
 
-func xorshiftMult64(x uint64) uint64 {
-	x ^= x >> 12 // a
-	x ^= x << 25 // b
-	x ^= x >> 27 // c
-	return x * 2685821657736338717
+// GetMembers returns a thread-safe copy of members.
+func (r *Rendezvous) GetNodes() (members []WeightedMember) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Create a thread-safe copy of member list.
+	members = make([]WeightedMember, 0, len(r.members))
+	for _, member := range r.members {
+		members = append(members, *member)
+	}
+	return
 }

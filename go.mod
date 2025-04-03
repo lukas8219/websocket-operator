@@ -5,10 +5,12 @@ go 1.23.0
 toolchain go1.23.7
 
 require (
-	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f
+	github.com/buraksezer/consistent v0.10.0
 	github.com/gobwas/ws v1.4.0
 	github.com/twmb/murmur3 v1.1.8
 	github.com/tylertreat/BoomFilters v0.0.0-20210315201527-1a82519a3e43
+	github.com/wangjohn/quickselect v0.0.0-20240903062940-6fa78e836728
+	github.com/zeebo/xxh3 v1.0.2
 	k8s.io/api v0.32.3
 	k8s.io/apimachinery v0.32.3
 	k8s.io/client-go v0.32.3
@@ -33,6 +35,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect

@@ -6,14 +6,12 @@ import (
 	"lukas8219/websocket-operator/internal/dns"
 
 	"lukas8219/websocket-operator/internal/rendezvous"
-
-	"github.com/twmb/murmur3"
 )
 
 type RouterImpl interface {
 	InitializeHosts() error
 	Route(recipientId string) string
-	OnHostRebalance(func([]string) error)
+	OnHostRebalance(func([][2]string) error)
 }
 
 type RouterConfigMode string
@@ -30,12 +28,7 @@ const (
 
 func NewRouter(config RouterConfig) RouterImpl {
 
-	rendezvous := rendezvous.New([]string{}, func(s string) uint64 {
-		murmurAlgorithm := murmur3.New64()
-		murmurAlgorithm.Write([]byte(s))
-		hash := murmurAlgorithm.Sum64()
-		return hash
-	})
+	rendezvous := rendezvous.NewDefault()
 	switch config.Mode {
 	case RouterConfigModeDns:
 		return dns.WithDns(rendezvous)
