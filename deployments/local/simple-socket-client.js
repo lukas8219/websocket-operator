@@ -53,8 +53,12 @@ console.log("Connecting to WebSocket server...");
 // Create a WebSocket connection
 const socket = new WebSocket(SERVER_URL, { headers: { "ws-user-id": user } });
 
+socket.on('upgrade', function(request, socket, head) {
+  console.log(request.headers);
+})
+
 // When successfully connected
-socket.on('open', () => {
+socket.on('open', function(){
   console.log("Connected to WebSocket server");
   
   if (autoPublish === "1") {
