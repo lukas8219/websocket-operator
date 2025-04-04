@@ -27,6 +27,10 @@ type KubernetesRouter struct {
 	handleDeletedEnpoints       func([]string)
 }
 
+func (k *KubernetesRouter) GetAllUpstreamHosts() []string {
+	return k.loadbalancer.GetAllHosts()
+}
+
 var (
 	addedHosts = make(map[string]bool)
 )
