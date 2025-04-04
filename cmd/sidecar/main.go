@@ -10,6 +10,7 @@ import (
 	"lukas8219/websocket-operator/cmd/sidecar/proxy"
 	"net"
 	"net/http"
+	"os"
 	"reflect"
 
 	"github.com/gobwas/ws"
@@ -74,12 +75,17 @@ func main() {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		slog := slog.With("recipientId", user)
+		w.Header().Set("x-ws-operator-instance", os.Getenv("HOSTNAME"))
 		userBloomFilter.Add(user)
-		slog.Info("New connection", "user", user)
+		slog.Info("New connection")
+		slog.Debug("Upgrading HTTP connection")
 		clientConn, _, _, err := ws.UpgradeHTTP(r, w)
 		if err != nil {
 			slog.Error("Failed to upgrade HTTP connection", "error", err)
+			return
 		}
+		slog.Debug("Dialing proxied connection")
 		proxiedConn, _, _, err := ws.Dial(context.Background(), "ws://localhost:"+*targetPort)
 		connections[user] = proxiedConn
 		if err != nil {
