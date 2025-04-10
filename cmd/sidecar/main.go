@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"lukas8219/websocket-operator/cmd/sidecar/collections"
 	"lukas8219/websocket-operator/cmd/sidecar/proxy"
+	"lukas8219/websocket-operator/internal/logger"
 	"net"
 	"net/http"
 	"os"
@@ -22,9 +23,10 @@ func main() {
 	port := flag.String("port", "3000", "Port to listen on")
 	targetPort := flag.String("targetPort", "3001", "Port to target")
 	mode := flag.String("mode", "kubernetes", "Mode to use")
+	debug := flag.Bool("debug", false, "Debug mode")
 	flag.Parse()
 	proxy.InitializeProxy(*mode)
-
+	logger.SetupLogger(*debug)
 	slog.Info("Starting server", "port", *port)
 	//We might need to change for a Counting BloomFilter
 	userBloomFilter := collections.New(1000000) // should we make this externally configurable?
@@ -53,6 +55,7 @@ func main() {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
+			//TODO use io.Pipe here
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
 				slog.Error("Failed to read request body", "error", err)
@@ -99,7 +102,7 @@ func main() {
 			clientConn.Close()
 			proxiedConn.Close()
 		}
-		handleIncomingMessagesToProxy := func(clientConnection net.Conn, targetConnection net.Conn) {
+		handleIncomingMessagesToProxy := func(clientConnection net.Conn) {
 			defer closeConnections()
 			for {
 				msg, op, err := wsutil.ReadClientData(clientConnection)
@@ -127,7 +130,7 @@ func main() {
 				// Now recipientIdString contains the actual string value
 				slog.Debug("Message recipient", "recipientId", recipientIdString)
 				if !userBloomFilter.Contains(recipientIdString) {
-					slog.Debug("No recipient found in-memory. Routing message to the correct target.")
+					slog.Debug("No recipient found in-memory. Routing message to the correct target.", "recipientId", recipientIdString)
 					err := proxy.SendProxiedMessage(recipientIdString, msg, op)
 					if err != nil {
 						slog.Error("Failed to route message", "error", err)
@@ -144,7 +147,7 @@ func main() {
 				}
 				err = wsutil.WriteClientMessage(recipientConnection, op, msg)
 				if err != nil {
-					slog.Error("Failed to write to client", "error", err)
+					slog.Error("Failed to write to client", "error", err, "recipientId", recipientIdString)
 					return
 				}
 				if op == ws.OpClose {
@@ -178,6 +181,6 @@ func main() {
 			}
 		}
 		go proxySidecarServerToClient(proxiedConn, clientConn)
-		go handleIncomingMessagesToProxy(clientConn, proxiedConn)
+		go handleIncomingMessagesToProxy(clientConn)
 	}))
 }

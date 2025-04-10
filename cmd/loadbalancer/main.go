@@ -36,25 +36,26 @@ type ConnectionTracker struct {
 }
 
 func (c *ConnectionTracker) Info(message string, args ...any) *ConnectionTracker {
-	slog.With("user", c.user).With("upstreamHost", c.upstreamHost).With("downstreamHost", c.downstreamHost).Info(message, args...)
+	slog.With("user", c.user).With("upstreamHost", c.upstreamHost).With("downstreamHost", c.downstreamHost).With("component", "connection-tracker").Info(message, args...)
 	return c
 }
 
 func (c *ConnectionTracker) Error(message string, args ...any) *ConnectionTracker {
-	slog.With("user", c.user).With("upstreamHost", c.upstreamHost).With("downstreamHost", c.downstreamHost).Error(message, args...)
+	slog.With("user", c.user).With("upstreamHost", c.upstreamHost).With("downstreamHost", c.downstreamHost).With("component", "connection-tracker").Error(message, args...)
 	return c
 }
 
 func (c *ConnectionTracker) Debug(message string, args ...any) *ConnectionTracker {
-	slog.With("user", c.user).With("upstreamHost", c.upstreamHost).With("downstreamHost", c.downstreamHost).Debug(message, args...)
+	slog.With("user", c.user).With("upstreamHost", c.upstreamHost).With("downstreamHost", c.downstreamHost).With("component", "connection-tracker").Debug(message, args...)
 	return c
 }
 
 func main() {
-	logger.SetupLogger("loadbalancer")
 	port := flag.String("port", "3000", "Port to listen on")
 	mode := flag.String("mode", "kubernetes", "Mode to use")
+	debug := flag.Bool("debug", false, "Debug mode")
 	flag.Parse()
+	logger.SetupLogger(*debug)
 	InitializeLoadBalancer(*mode)
 	slog.Info("Starting load balancer server", "port", *port, "mode", *mode)
 	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +108,7 @@ func main() {
 		connectionTracker.Info("Connected to upstream")
 
 		router.OnHostRebalance(func(hosts [][2]string) error {
-			connectionTracker.Debug("Triggered OnHostRebalance callback returning hosts", "hosts", hosts)
+			connectionTracker.Info("Triggered OnHostRebalance callback returning hosts", "hosts", hosts)
 			for _, affectedHost := range hosts {
 				oldHost := affectedHost[0]
 				newHost := affectedHost[1]
@@ -129,6 +130,7 @@ func main() {
 					connectionTracker.upstreamContext, connectionTracker.cancelUpstream = context.WithCancel(context.Background())
 
 					_, err = connectToUpstreamAndProxyMessages(connectionTracker, user)
+					go handleIncomingMessagesToProxy(connectionTracker)
 					if err != nil {
 						connectionTracker.Error("Failed to reconnect to upstream", "error", err)
 						connectionTracker.Close()

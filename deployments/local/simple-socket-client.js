@@ -64,7 +64,6 @@ socket.on('open', function(){
   if (autoPublish === "1") {
     const hiInterval = setInterval(() => {
       const message = JSON.stringify({ message: "HI", recipientId: String(recipientId), from: String(user) });
-      console.log(`Sent ${message} to server`);
       socket.send(message);  
     }, 3000);
   
@@ -92,5 +91,5 @@ socket.on('close', (code, reason) => {
 
 // Optional: Handle incoming messages
 socket.on('message', (data) => {
-  console.log("Received message:", data.toString());
+  console.log("Received:", data.toString());
 }); 

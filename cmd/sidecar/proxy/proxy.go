@@ -27,7 +27,7 @@ func InitializeProxy(mode string) {
 
 func SendProxiedMessage(recipientId string, message []byte, opCode ws.OpCode) error {
 	host := router.Route(recipientId)
-	slog := slog.With("recipientId", recipientId).With("opCode", opCode).With("host", host)
+	slog := slog.With("recipientId", recipientId).With("opCode", opCode).With("host", host).With("component", "proxy")
 	if host == "" {
 		slog.Error("no host found")
 		return errors.New("no host found")

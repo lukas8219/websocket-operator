@@ -5,9 +5,9 @@ import (
 	"os"
 )
 
-func SetupLogger(component string) {
+func SetupLogger(debug bool) {
 	logLevel := slog.LevelInfo
-	if debugEnv := os.Getenv("DEBUG"); debugEnv != "" {
+	if debug {
 		logLevel = slog.LevelDebug
 	}
 
@@ -16,7 +16,5 @@ func SetupLogger(component string) {
 	})
 
 	logger := slog.New(handler)
-	logger = logger.With("component", component)
 	slog.SetDefault(logger)
-
 }

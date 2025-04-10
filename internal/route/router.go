@@ -1,6 +1,7 @@
 package route
 
 import (
+	"log/slog"
 	"lukas8219/websocket-operator/internal/kubernetes"
 
 	"lukas8219/websocket-operator/internal/dns"
@@ -27,7 +28,7 @@ const (
 )
 
 func NewRouter(config RouterConfig) RouterImpl {
-
+	slog.With("component", "router").With("mode", config.Mode).Info("New router")
 	rendezvous := rendezvous.NewDefault()
 	switch config.Mode {
 	case RouterConfigModeDns:
