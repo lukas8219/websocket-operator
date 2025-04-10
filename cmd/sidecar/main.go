@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"io"
-	"log"
+	"log/slog"
 	"lukas8219/websocket-operator/cmd/sidecar/collections"
 	"lukas8219/websocket-operator/cmd/sidecar/proxy"
+	"lukas8219/websocket-operator/internal/logger"
 	"net"
 	"net/http"
+	"os"
 	"reflect"
 
 	"github.com/gobwas/ws"
@@ -22,10 +23,11 @@ func main() {
 	port := flag.String("port", "3000", "Port to listen on")
 	targetPort := flag.String("targetPort", "3001", "Port to target")
 	mode := flag.String("mode", "kubernetes", "Mode to use")
+	debug := flag.Bool("debug", false, "Debug mode")
 	flag.Parse()
 	proxy.InitializeProxy(*mode)
-
-	log.Printf("Starting server on port %s", *port)
+	logger.SetupLogger(*debug)
+	slog.Info("Starting server", "port", *port)
 	//We might need to change for a Counting BloomFilter
 	userBloomFilter := collections.New(1000000) // should we make this externally configurable?
 	incomingMessageStruct := reflect.StructOf([]reflect.StructField{
@@ -39,52 +41,58 @@ func main() {
 	// Key: user ID, Value: net.Conn
 	connections := make(map[string]net.Conn)
 	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Println("Request:", r.Method, r.URL.Path)
+		slog.Debug("Request received", "method", r.Method, "path", r.URL.Path)
 		if r.Method == http.MethodPost && r.URL.Path == "/message" {
 			if !userBloomFilter.Contains(r.Header.Get("ws-user-id")) {
-				log.Println("No recipient found in-memory", r.Header.Get("ws-user-id"))
+				slog.Debug("No recipient found in-memory", "user", r.Header.Get("ws-user-id"))
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
 			userId := r.Header.Get("ws-user-id")
 			conn := connections[userId]
 			if conn == nil {
-				log.Println("No connection found for", userId)
+				slog.Debug("No connection found", "userId", userId)
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
+			//TODO use io.Pipe here
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				log.Printf("Failed to read request body: %v", err)
+				slog.Error("Failed to read request body", "error", err)
 				return
 			}
 
 			opCode := ws.OpCode(body[0])
 			message := body[1:]
-			log.Println("Writing message to client", userId, opCode, string(body))
+			slog.Debug("Writing message to client", "userId", userId, "opCode", opCode, "message", string(message))
 			err = wsutil.WriteClientMessage(conn, opCode, message)
 			if err != nil {
-				log.Printf("Failed to write WebSocket message: %v", err)
+				slog.Error("Failed to write WebSocket message", "error", err)
 				return
 			}
 			return
 		}
 		user := r.Header.Get("ws-user-id")
 		if user == "" {
-			log.Println("No user id provided")
+			slog.Debug("No user id provided")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		slog := slog.With("recipientId", user)
+		w.Header().Set("x-ws-operator-instance", os.Getenv("HOSTNAME"))
 		userBloomFilter.Add(user)
-		log.Println("New connection from", user)
+		slog.Info("New connection")
+		slog.Debug("Upgrading HTTP connection")
 		clientConn, _, _, err := ws.UpgradeHTTP(r, w)
 		if err != nil {
-			log.Println(err)
+			slog.Error("Failed to upgrade HTTP connection", "error", err)
+			return
 		}
+		slog.Debug("Dialing proxied connection")
 		proxiedConn, _, _, err := ws.Dial(context.Background(), "ws://localhost:"+*targetPort)
 		connections[user] = proxiedConn
 		if err != nil {
-			log.Println(errors.Join(errors.New("failed to dial proxied connection"), err))
+			slog.Error("Failed to dial proxied connection", "error", err)
 			clientConn.Close()
 			return
 		}
@@ -94,19 +102,19 @@ func main() {
 			clientConn.Close()
 			proxiedConn.Close()
 		}
-		handleIncomingMessagesToProxy := func(clientConnection net.Conn, targetConnection net.Conn) {
+		handleIncomingMessagesToProxy := func(clientConnection net.Conn) {
 			defer closeConnections()
 			for {
 				msg, op, err := wsutil.ReadClientData(clientConnection)
 				if err != nil {
-					log.Println(errors.Join(err, errors.New("failed to read from client")))
+					slog.Error("Failed to read from client", "error", err)
 					return
 				}
 
 				message := reflect.New(incomingMessageStruct).Interface()
 				err = json.Unmarshal(msg, message)
 				if err != nil {
-					log.Printf("Failed to unmarshal message: %v", err)
+					slog.Error("Failed to unmarshal message", "error", err)
 					return
 				}
 				// Get the json.RawMessage as a byte slice
@@ -115,17 +123,17 @@ func main() {
 				// If it's a JSON string (like "user123"), you need to unmarshal it
 				var recipientIdString string
 				if err := json.Unmarshal(rawBytes, &recipientIdString); err != nil {
-					log.Printf("Failed to unmarshal recipientId: %v", err)
+					slog.Error("Failed to unmarshal recipientId", "error", err)
 					return
 				}
 
 				// Now recipientIdString contains the actual string value
-				log.Println("RecipientId:", recipientIdString)
+				slog.Debug("Message recipient", "recipientId", recipientIdString)
 				if !userBloomFilter.Contains(recipientIdString) {
-					log.Println("No recipient found in-memory. Routing message to the correct target.")
+					slog.Debug("No recipient found in-memory. Routing message to the correct target.", "recipientId", recipientIdString)
 					err := proxy.SendProxiedMessage(recipientIdString, msg, op)
 					if err != nil {
-						log.Println(errors.Join(err, errors.New("failed to route message")))
+						slog.Error("Failed to route message", "error", err)
 					}
 					continue
 				}
@@ -134,16 +142,16 @@ func main() {
 
 				recipientConnection := connections[recipientIdString]
 				if recipientConnection == nil {
-					log.Println("No connection found for", recipientIdString)
+					slog.Debug("No connection found", "recipientId", recipientIdString)
 					continue
 				}
 				err = wsutil.WriteClientMessage(recipientConnection, op, msg)
 				if err != nil {
-					log.Println(errors.Join(err, errors.New("failed to write to client")))
+					slog.Error("Failed to write to client", "error", err, "recipientId", recipientIdString)
 					return
 				}
 				if op == ws.OpClose {
-					log.Println("Client closed connection")
+					slog.Info("Client closed connection")
 					return
 				}
 			}
@@ -154,7 +162,7 @@ func main() {
 				//Read as client - from the server.
 				msg, op, err := wsutil.ReadServerData(serverConnection)
 				if err != nil {
-					log.Println(errors.Join(err, errors.New("failed to read from server")))
+					slog.Error("Failed to read from server", "error", err)
 					return
 				}
 
@@ -163,16 +171,16 @@ func main() {
 				//Write as client - to the proxied connection
 				err = wsutil.WriteServerMessage(targetConnection, op, msg)
 				if err != nil {
-					log.Println(errors.Join(err, errors.New("failed to write to client")))
+					slog.Error("Failed to write to client", "error", err)
 					return
 				}
 				if op == ws.OpClose {
-					log.Println("Server closed connection")
+					slog.Info("Server closed connection")
 					return
 				}
 			}
 		}
 		go proxySidecarServerToClient(proxiedConn, clientConn)
-		go handleIncomingMessagesToProxy(clientConn, proxiedConn)
+		go handleIncomingMessagesToProxy(clientConn)
 	}))
 }
