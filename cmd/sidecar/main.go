@@ -6,7 +6,6 @@ import (
 	"flag"
 	"io"
 	"log/slog"
-	"lukas8219/websocket-operator/cmd/sidecar/collections"
 	"lukas8219/websocket-operator/cmd/sidecar/proxy"
 	"lukas8219/websocket-operator/internal/logger"
 	"net"
@@ -55,18 +54,16 @@ func main() {
 	mode := flag.String("mode", "kubernetes", "Mode to use")
 	debug := flag.Bool("debug", false, "Debug mode")
 	flag.Parse()
-	proxy.InitializeProxy(*mode)
 	logger.SetupLogger(*debug)
+	proxy.InitializeProxy(*mode)
 	slog.Info("Starting server", "port", *port)
-	//We might need to change for a Counting BloomFilter
-	userBloomFilter := collections.New(1000000) // should we make this externally configurable?
 	// Map to store active WebSocket connections
 	// Key: user ID, Value: ConnectionTracker
 	connections := make(map[string]*ConnectionTracker)
 	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("Request received", "method", r.Method, "path", r.URL.Path)
 		if r.Method == http.MethodPost && r.URL.Path == "/message" {
-			if !userBloomFilter.Contains(r.Header.Get("ws-user-id")) {
+			if connections[r.Header.Get("ws-user-id")] == nil {
 				slog.Debug("No recipient found in-memory", "user", r.Header.Get("ws-user-id"))
 				w.WriteHeader(http.StatusNotFound)
 				return
@@ -103,7 +100,6 @@ func main() {
 		}
 		slog := slog.With("recipientId", user)
 		w.Header().Set("x-ws-operator-instance", os.Getenv("HOSTNAME"))
-		userBloomFilter.Add(user)
 		slog.Info("New connection")
 		slog.Debug("Upgrading HTTP connection")
 		clientConn, _, _, err := ws.UpgradeHTTP(r, w)
@@ -116,7 +112,7 @@ func main() {
 		connectionTracker := &ConnectionTracker{
 			user:           user,
 			upstreamHost:   "localhost:" + *targetPort,
-			downstreamHost: "localhost:" + *port,
+			downstreamHost: r.RemoteAddr,
 			upstreamConn:   proxiedConn,
 			downstreamConn: clientConn,
 		}
@@ -126,15 +122,15 @@ func main() {
 			clientConn.Close()
 			return
 		}
+		//TODO no good here
 		closeConnections := func() {
-			userBloomFilter.Remove(user)
 			connections[user] = nil
 			connectionTracker.downstreamConn.Close()
 			connectionTracker.upstreamConn.Close()
 		}
 
 		go proxySidecarServerToClient(closeConnections, connectionTracker)
-		go handleIncomingMessagesToProxy(userBloomFilter, connections, closeConnections, connectionTracker)
+		go handleIncomingMessagesToProxy(connections, closeConnections, connectionTracker)
 	}))
 }
 
@@ -164,7 +160,7 @@ func proxySidecarServerToClient(deferClose func(), connectionTracker *Connection
 }
 
 // TODO functions is doing too much. Split into smaller modules
-func handleIncomingMessagesToProxy(userBloomFilter *collections.BloomFilter, connections map[string]*ConnectionTracker, deferClose func(), connectionTracker *ConnectionTracker) {
+func handleIncomingMessagesToProxy(connections map[string]*ConnectionTracker, deferClose func(), connectionTracker *ConnectionTracker) {
 	defer deferClose()
 	for {
 		msg, op, err := wsutil.ReadClientData(connectionTracker.downstreamConn)
@@ -189,9 +185,10 @@ func handleIncomingMessagesToProxy(userBloomFilter *collections.BloomFilter, con
 			return
 		}
 
-		// Now recipientIdString contains the actual string value
-		slog.Debug("Message recipient", "recipientId", recipientIdString)
-		if !userBloomFilter.Contains(recipientIdString) {
+		recipientConnection := connections[recipientIdString]
+
+		slog.Debug("Message recipient", "recipientId", recipientIdString, "recipientConnection", recipientConnection)
+		if recipientConnection == nil {
 			slog.Debug("No recipient found in-memory. Routing message to the correct target.", "recipientId", recipientIdString)
 			err := proxy.SendProxiedMessage(recipientIdString, msg, op)
 			if err != nil {
@@ -200,13 +197,6 @@ func handleIncomingMessagesToProxy(userBloomFilter *collections.BloomFilter, con
 			continue
 		}
 
-		//Might need to handle Close here
-
-		recipientConnection := connections[recipientIdString]
-		if recipientConnection == nil {
-			slog.Debug("No connection found", "recipientId", recipientIdString)
-			continue
-		}
 		err = wsutil.WriteClientMessage(recipientConnection.upstreamConn, op, msg)
 		if err != nil {
 			connectionTracker.Error("Failed to write to client", "error", err, "recipientId", recipientIdString)

@@ -17,4 +17,5 @@ func SetupLogger(debug bool) {
 
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
+	slog.Info("Logger setup", "level", logLevel)
 }
