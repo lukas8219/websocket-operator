@@ -159,3 +159,11 @@ func (r *Rendezvous) GetNodes() (members []WeightedMember) {
 	}
 	return
 }
+
+func (r *Rendezvous) GetAllHosts() []string {
+	hosts := make([]string, 0)
+	for _, member := range r.members {
+		hosts = append(hosts, member.member)
+	}
+	return hosts
+}

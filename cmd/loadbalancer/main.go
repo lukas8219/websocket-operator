@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
-	"log"
+	"log/slog"
+	"lukas8219/websocket-operator/internal/logger"
 	"lukas8219/websocket-operator/internal/route"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gobwas/ws"
@@ -24,7 +25,9 @@ func InitializeLoadBalancer(mode string) {
 }
 
 type ConnectionTracker struct {
+	user                   string
 	upstreamHost           string
+	downstreamHost         string
 	upstreamConn           net.Conn
 	downstreamConn         net.Conn
 	cancelUpstream         context.CancelFunc
@@ -32,69 +35,104 @@ type ConnectionTracker struct {
 	upstreamCancellingChan chan int
 }
 
+func (c *ConnectionTracker) Info(message string, args ...any) *ConnectionTracker {
+	slog.With("user", c.user).With("upstreamHost", c.upstreamHost).With("downstreamHost", c.downstreamHost).With("component", "connection-tracker").Info(message, args...)
+	return c
+}
+
+func (c *ConnectionTracker) Error(message string, args ...any) *ConnectionTracker {
+	slog.With("user", c.user).With("upstreamHost", c.upstreamHost).With("downstreamHost", c.downstreamHost).With("component", "connection-tracker").Error(message, args...)
+	return c
+}
+
+func (c *ConnectionTracker) Debug(message string, args ...any) *ConnectionTracker {
+	slog.With("user", c.user).With("upstreamHost", c.upstreamHost).With("downstreamHost", c.downstreamHost).With("component", "connection-tracker").Debug(message, args...)
+	return c
+}
+
 func main() {
 	port := flag.String("port", "3000", "Port to listen on")
 	mode := flag.String("mode", "kubernetes", "Mode to use")
+	debug := flag.Bool("debug", false, "Debug mode")
 	flag.Parse()
+	logger.SetupLogger(*debug)
 	InitializeLoadBalancer(*mode)
-	log.Printf("Starting load balancer server on port %s", *port)
+	slog.Info("Starting load balancer server", "port", *port, "mode", *mode)
 	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := r.Header.Get("ws-user-id")
 		if user == "" {
-			log.Println("No user id provided")
+			slog.Error("No user id provided")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		log.Println("New connection from", user)
+		connectionTracker := &ConnectionTracker{
+			user:           user,
+			downstreamHost: r.RemoteAddr,
+		}
+
+		connectionTracker.Debug("New connection")
 
 		host := router.Route(user)
+		connectionTracker.Debug("New connection")
 		if host == "" {
-			log.Println("No host found for user", user)
+			connectionTracker.Error("No host found for user")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		clientConn, _, _, err := ws.UpgradeHTTP(r, w)
+		connectionTracker.upstreamHost = host
+		connectionTracker.Debug("Upgrading HTTP connection")
+		upgrader := ws.HTTPUpgrader{
+			Header: http.Header{
+				"x-ws-operator-proxy-instance": []string{os.Getenv("HOSTNAME")},
+				"x-ws-operator-upstream-host":  []string{host},
+			},
+		}
+		clientConn, _, _, err := upgrader.Upgrade(r, w)
+		connectionTracker.downstreamConn = clientConn
 		if err != nil {
-			log.Println(err)
+			connectionTracker.Error("Failed to upgrade HTTP connection", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-
-		connectionTracker := &ConnectionTracker{
-			upstreamHost:   host,
-			downstreamConn: clientConn,
-		}
+		connectionTracker.Debug("Upgraded HTTP connection")
 
 		connectionTracker.upstreamContext, connectionTracker.cancelUpstream = context.WithCancel(context.Background())
 		proxiedCon, err := connectToUpstreamAndProxyMessages(connectionTracker, user)
+		if err != nil {
+			connectionTracker.Error("Failed to connect to upstream", "error", err)
+			connectionTracker.Close()
+			return
+		}
 		connectionTracker.upstreamConn = proxiedCon
 		connectionTracker.upstreamCancellingChan = make(chan int, 1)
+		connectionTracker.Info("Connected to upstream")
 
 		router.OnHostRebalance(func(hosts [][2]string) error {
-			log.Println("OnHostRebalance", hosts)
+			connectionTracker.Info("Triggered OnHostRebalance callback returning hosts", "hosts", hosts)
 			for _, affectedHost := range hosts {
 				oldHost := affectedHost[0]
 				newHost := affectedHost[1]
-				log.Println("Checking host", oldHost, "versus", connectionTracker.upstreamHost)
+				connectionTracker.Debug("Checking host", "oldHost", oldHost)
 				if connectionTracker.upstreamHost == oldHost {
-					log.Println("Rebalancing connection from", oldHost, "to", newHost)
+					connectionTracker.Info("Rebalancing connection from", "old", oldHost, "new", newHost)
 					connectionTracker.cancelUpstream()
 					connectionTracker.upstreamHost = newHost
 
-					log.Println("Waiting for upstream to cancel", oldHost)
+					connectionTracker.Debug("Waiting for upstream to cancel", "old", oldHost)
 					select {
 					case <-connectionTracker.upstreamCancellingChan:
-						log.Println("Successfully received cancellation signal")
+						connectionTracker.Debug("Successfully received cancellation signal")
 					case <-time.After(5 * time.Second):
-						log.Println("Timeout waiting for upstream cancellation, proceeding anyway")
+						connectionTracker.Error("Timeout waiting for upstream cancellation, proceeding anyway")
 					}
 
-					log.Println("Rebalancing host", host, "to", newHost)
+					connectionTracker.Debug("Rebalancing host", "host", host, "to", newHost)
 					connectionTracker.upstreamContext, connectionTracker.cancelUpstream = context.WithCancel(context.Background())
-					connectionTracker.upstreamCancellingChan = make(chan int, 1)
+
 					_, err = connectToUpstreamAndProxyMessages(connectionTracker, user)
+					go handleIncomingMessagesToProxy(connectionTracker)
 					if err != nil {
-						log.Println(errors.Join(err, errors.New("failed to reconnect to upstream")))
+						connectionTracker.Error("Failed to reconnect to upstream", "error", err)
 						connectionTracker.Close()
 						return err
 					}
@@ -122,22 +160,22 @@ func handleIncomingMessagesToProxy(connectionTracker *ConnectionTracker) {
 		upstreamConnection := connectionTracker.upstreamConn
 		msg, op, err := wsutil.ReadClientData(clientConnection)
 		if err != nil {
-			log.Println(errors.Join(err, errors.New("failed to read from downstream")))
+			connectionTracker.Error("Failed to read from downstream", "error", err)
 			return
 		}
 		select {
 		case <-connectionTracker.upstreamContext.Done():
-			log.Println("Upstream context done")
+			connectionTracker.Debug("Upstream context done")
 			return
 		default:
 			//TODO: SEGFAULT here in case upstreamConnection is nil - due to failure or whatever. network delays could cause this
 			err = wsutil.WriteClientMessage(upstreamConnection, op, msg)
 			if err != nil {
-				log.Println(errors.Join(err, errors.New("failed to write to upstream")))
+				connectionTracker.Error("Failed to write to upstream", "error", err)
 				return
 			}
 			if op == ws.OpClose {
-				log.Println("downstream server closed connection")
+				connectionTracker.Debug("downstream server closed connection")
 				return
 			}
 		}
@@ -152,22 +190,22 @@ func connectToUpstreamAndProxyMessages(connectionTracker *ConnectionTracker, use
 			"ws-user-id": []string{user},
 		},
 	}
-	log.Println("Dialing upstream", host)
+	connectionTracker.Debug("Dialing upstream")
 	proxiedConn, _, _, err := dialer.Dial(connectionTracker.upstreamContext, "ws://"+host)
 	if err != nil {
-		log.Println(errors.Join(errors.New("failed to dial upstream"), err))
+		connectionTracker.Error("Failed to dial upstream", "error", err)
 		return nil, err
 	}
-	log.Println("Connected to upstream", host)
+	connectionTracker.Debug("Connected to upstream")
 	connectionTracker.upstreamConn = proxiedConn
 
 	waitSignal := func() {
-		log.Println("Closing upstream connection", host)
+		connectionTracker.Debug("Closing upstream connection")
 		select {
 		case connectionTracker.upstreamCancellingChan <- 1:
-			log.Println("Successfully signaled cancellation")
+			connectionTracker.Debug("Successfully signaled cancellation")
 		default:
-			log.Println("No one waiting for cancellation signal, skipping")
+			connectionTracker.Debug("No one waiting for cancellation signal, skipping")
 		}
 	}
 
@@ -177,24 +215,24 @@ func connectToUpstreamAndProxyMessages(connectionTracker *ConnectionTracker, use
 		for {
 			select {
 			case <-connectionTracker.upstreamContext.Done():
-				log.Println("Upstream context done", host)
+				connectionTracker.Debug("Upstream context done")
 				proxiedConn.Close()
 				return
 			default:
 				//Read as client - from the server.
 				msg, op, err := wsutil.ReadServerData(proxiedConn)
 				if err != nil {
-					log.Println(errors.Join(err, errors.New("failed to read from upstream"+host)))
+					connectionTracker.Error("Failed to read from upstream", "error", err)
 					return
 				}
 				//Write as client - to the proxied connection
 				err = wsutil.WriteServerMessage(connectionTracker.downstreamConn, op, msg)
 				if err != nil {
-					log.Println(errors.Join(err, errors.New("failed to write to downstream")))
+					connectionTracker.Error("Failed to write to downstream", "error", err)
 					return
 				}
 				if op == ws.OpClose {
-					log.Println("upstream server closed connection", host)
+					connectionTracker.Debug("upstream server closed connection")
 					return
 				}
 			}

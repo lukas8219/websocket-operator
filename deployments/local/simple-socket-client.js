@@ -53,14 +53,17 @@ console.log("Connecting to WebSocket server...");
 // Create a WebSocket connection
 const socket = new WebSocket(SERVER_URL, { headers: { "ws-user-id": user } });
 
+socket.on('upgrade', function(request, socket, head) {
+  console.log(request.headers);
+})
+
 // When successfully connected
-socket.on('open', () => {
+socket.on('open', function(){
   console.log("Connected to WebSocket server");
   
   if (autoPublish === "1") {
     const hiInterval = setInterval(() => {
       const message = JSON.stringify({ message: "HI", recipientId: String(recipientId), from: String(user) });
-      console.log(`Sent ${message} to server`);
       socket.send(message);  
     }, 3000);
   
@@ -88,5 +91,5 @@ socket.on('close', (code, reason) => {
 
 // Optional: Handle incoming messages
 socket.on('message', (data) => {
-  console.log("Received message:", data.toString());
+  console.log("Received:", data.toString());
 }); 

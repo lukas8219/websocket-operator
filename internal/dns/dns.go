@@ -2,7 +2,7 @@ package dns
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"lukas8219/websocket-operator/internal/rendezvous"
 	"net"
 	"os"
@@ -12,6 +12,18 @@ import (
 
 type DnsRouter struct {
 	loadbalancer *rendezvous.Rendezvous
+}
+
+func (r *DnsRouter) Info(msg string, args ...any) {
+	slog.With("component", "router").With("mode", "dns").Info(msg, args...)
+}
+
+func (r *DnsRouter) Debug(msg string, args ...any) {
+	slog.With("component", "router").With("mode", "dns").Debug(msg, args...)
+}
+
+func (r *DnsRouter) Error(msg string, args ...any) {
+	slog.With("component", "router").With("mode", "dns").Error(msg, args...)
 }
 
 func WithDns(loadbalancer *rendezvous.Rendezvous) *DnsRouter {
@@ -48,10 +60,10 @@ func createResolver() *net.Resolver {
 			d := net.Dialer{}
 			ctx, cancel := context.WithTimeout(ctx, time.Second*5)
 			defer cancel()
-			log.Println("Looking for " + address + " on localhost:53")
+			slog.Debug("Looking for address on localhost:53", "address", address)
 			conn, err := d.DialContext(ctx, "udp", "0.0.0.0:53")
 			if err != nil {
-				log.Println("Failed to connect to localhost:53, falling back to system resolver:", err)
+				slog.Debug("Failed to connect to localhost:53, falling back to system resolver", "error", err)
 				return d.DialContext(ctx, network, address)
 			}
 			return conn, nil
@@ -63,7 +75,7 @@ func createResolver() *net.Resolver {
 
 func (r *DnsRouter) getCurrentHosts(service string) ([]string, error) {
 	resolver := createResolver()
-	log.Println("Getting random SRV host for service:", service)
+	slog.Debug("Getting random SRV host for service", "service", service)
 	_, addrs, err := resolver.LookupSRV(context.Background(), "", "", service)
 	if err != nil {
 		return nil, err
@@ -82,7 +94,7 @@ func (r *DnsRouter) getCurrentHosts(service string) ([]string, error) {
 		}
 		addrPorts[i] = net.JoinHostPort(addr[0].String(), strconv.Itoa(int(srv.Port)))
 	}
-	log.Println("Addrs:", addrPorts)
+	slog.Debug("Found addresses", "addrs", addrPorts)
 	return addrPorts, nil
 }
 

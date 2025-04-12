@@ -1,6 +1,7 @@
 package route
 
 import (
+	"log/slog"
 	"lukas8219/websocket-operator/internal/kubernetes"
 
 	"lukas8219/websocket-operator/internal/dns"
@@ -8,10 +9,17 @@ import (
 	"lukas8219/websocket-operator/internal/rendezvous"
 )
 
+type Logger interface {
+	Info(msg string, args ...any)
+	Debug(msg string, args ...any)
+	Error(msg string, args ...any)
+}
+
 type RouterImpl interface {
 	InitializeHosts() error
 	Route(recipientId string) string
 	OnHostRebalance(func([][2]string) error)
+	Logger
 }
 
 type RouterConfigMode string
@@ -27,7 +35,7 @@ const (
 )
 
 func NewRouter(config RouterConfig) RouterImpl {
-
+	slog.With("component", "router").With("mode", config.Mode).Info("New router")
 	rendezvous := rendezvous.NewDefault()
 	switch config.Mode {
 	case RouterConfigModeDns:
