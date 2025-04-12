@@ -9,10 +9,17 @@ import (
 	"lukas8219/websocket-operator/internal/rendezvous"
 )
 
+type Logger interface {
+	Info(msg string, args ...any)
+	Debug(msg string, args ...any)
+	Error(msg string, args ...any)
+}
+
 type RouterImpl interface {
 	InitializeHosts() error
 	Route(recipientId string) string
 	OnHostRebalance(func([][2]string) error)
+	Logger
 }
 
 type RouterConfigMode string

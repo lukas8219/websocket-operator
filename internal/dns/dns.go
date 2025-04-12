@@ -14,6 +14,18 @@ type DnsRouter struct {
 	loadbalancer *rendezvous.Rendezvous
 }
 
+func (r *DnsRouter) Info(msg string, args ...any) {
+	slog.With("component", "router").With("mode", "dns").Info(msg, args...)
+}
+
+func (r *DnsRouter) Debug(msg string, args ...any) {
+	slog.With("component", "router").With("mode", "dns").Debug(msg, args...)
+}
+
+func (r *DnsRouter) Error(msg string, args ...any) {
+	slog.With("component", "router").With("mode", "dns").Error(msg, args...)
+}
+
 func WithDns(loadbalancer *rendezvous.Rendezvous) *DnsRouter {
 	return &DnsRouter{
 		loadbalancer,

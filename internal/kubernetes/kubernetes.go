@@ -27,6 +27,18 @@ type KubernetesRouter struct {
 	handleDeletedEnpoints       func([]string)
 }
 
+func (k *KubernetesRouter) Info(msg string, args ...any) {
+	slog.With("component", "router").With("mode", "kubernetes").Info(msg, args...)
+}
+
+func (k *KubernetesRouter) Debug(msg string, args ...any) {
+	slog.With("component", "router").With("mode", "kubernetes").Debug(msg, args...)
+}
+
+func (k *KubernetesRouter) Error(msg string, args ...any) {
+	slog.With("component", "router").With("mode", "kubernetes").Error(msg, args...)
+}
+
 func (k *KubernetesRouter) GetAllUpstreamHosts() []string {
 	return k.loadbalancer.GetAllHosts()
 }
@@ -59,14 +71,14 @@ func createClient() *kubernetes.Clientset {
 }
 
 func (k *KubernetesRouter) Route(recipientId string) string {
-	slog.With("component", "router").With("mode", "kubernetes").With("recipientId", recipientId).With("nodes", k.loadbalancer.GetNodes()).Debug("Lookup")
+	k.Debug("Lookup", "recipientId", recipientId, "nodes", k.loadbalancer.GetNodes())
 	host := k.loadbalancer.Lookup(recipientId)
 	if host == "" {
-		slog.With("component", "router").With("mode", "kubernetes").With("recipientId", recipientId).With("nodes", k.loadbalancer.GetNodes()).Debug("No host found")
+		k.Debug("No host found", "recipientId", recipientId, "nodes", k.loadbalancer.GetNodes())
 		return ""
 	}
 	k.alreadyCalculatedRecipients[recipientId] = host
-	slog.With("component", "router").With("mode", "kubernetes").With("recipientId", recipientId).With("host", host).Debug("Host found")
+	k.Debug("Host found", "recipientId", recipientId, "host", host)
 	host = fmt.Sprintf("%s:3000", host)
 	return host
 }
@@ -97,7 +109,7 @@ func (k *KubernetesRouter) InitializeHosts() error {
 					k.loadbalancer.Add(host)
 					addedHosts[host] = true
 				}
-				slog.With("component", "router").With("mode", "kubernetes").With("hosts", hosts).Info("Added addresses")
+				k.Info("Added addresses", "hosts", hosts)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				hosts := make([]string, 0)
@@ -119,13 +131,13 @@ func (k *KubernetesRouter) InitializeHosts() error {
 					k.loadbalancer.Add(host)
 					addedHosts[host] = true
 				}
-				slog.With("component", "router").With("mode", "kubernetes").With("hosts", hosts).Info("Updated addresses")
+				k.Info("Updated addresses", "hosts", hosts)
 				rebalanceHosts := make([][2]string, 0)
 				//re-calculate computed recipients to check re-balancing
-				slog.With("component", "router").With("mode", "kubernetes").With("recipients", k.alreadyCalculatedRecipients).Debug("Already calculated recipients")
+				k.Debug("Already calculated recipients", "recipients", k.alreadyCalculatedRecipients)
 				for recipientId, host := range k.alreadyCalculatedRecipients {
 					newlyCalculatedHost := k.loadbalancer.Lookup(recipientId)
-					slog.With("component", "router").With("mode", "kubernetes").With("recipientId", recipientId).With("oldHost", host).With("newHost", newlyCalculatedHost).Debug("Checking rebalance")
+					k.Debug("Checking rebalance", "recipientId", recipientId, "oldHost", host, "newHost", newlyCalculatedHost)
 					if newlyCalculatedHost != host {
 						hostWithPort := fmt.Sprintf("%s:3000", host)
 						newlyCalculatedHostWithPort := fmt.Sprintf("%s:3000", newlyCalculatedHost)
@@ -133,10 +145,10 @@ func (k *KubernetesRouter) InitializeHosts() error {
 					}
 				}
 				if len(rebalanceHosts) > 0 {
-					slog.With("component", "router").With("mode", "kubernetes").With("hosts", rebalanceHosts).Info("Rebalancing hosts")
+					k.Info("Rebalancing hosts", "hosts", rebalanceHosts)
 					k.triggerRebalance(rebalanceHosts)
 				} else {
-					slog.With("component", "router").With("mode", "kubernetes").With("hosts", rebalanceHosts).Debug("No rebalancing hosts found")
+					k.Debug("No rebalancing hosts found")
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
@@ -147,14 +159,14 @@ func (k *KubernetesRouter) InitializeHosts() error {
 				for _, host := range hosts {
 					k.loadbalancer.Remove(host)
 				}
-				slog.With("component", "router").With("mode", "kubernetes").With("hosts", hosts).Info("Deleted addresses")
+				k.Info("Deleted addresses", "hosts", hosts)
 			},
 		},
 	})
 	stop := make(chan struct{})
 	go controller.Run(stop)
 	if !cache.WaitForCacheSync(stop, controller.HasSynced) {
-		slog.With("component", "router").With("mode", "kubernetes").Error("Timed out waiting for caches to sync")
+		k.Error("Timed out waiting for caches to sync")
 		return fmt.Errorf("timed out waiting for caches to sync")
 	}
 	k.cacheStore = store
@@ -163,12 +175,12 @@ func (k *KubernetesRouter) InitializeHosts() error {
 
 func (k *KubernetesRouter) triggerRebalance(hosts [][2]string) error {
 	if k.rebalancedHostTrigger == nil {
-		slog.With("component", "router").With("mode", "kubernetes").Debug("No rebalance trigger found")
+		k.Debug("No rebalance trigger found")
 		return nil
 	}
 
 	for _, fn := range k.rebalancedHostTrigger {
-		slog.With("component", "router").With("mode", "kubernetes").With("hosts", hosts).Debug("Triggering rebalance")
+		k.Debug("Triggering rebalance", "hosts", hosts)
 		err := fn(hosts)
 		if err != nil {
 			return err
