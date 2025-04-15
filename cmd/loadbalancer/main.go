@@ -58,6 +58,8 @@ func main() {
 	logger.SetupLogger(*debug)
 	InitializeLoadBalancer(*mode)
 	slog.Info("Starting load balancer server", "port", *port, "mode", *mode)
+	connections := make(map[string]*ConnectionTracker) //TODO: This could be a broadcast instead of a single recipient/connection
+	go handleRebalanceLoop(connections)
 	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := r.Header.Get("ws-user-id")
 		if user == "" {
@@ -69,6 +71,7 @@ func main() {
 			user:           user,
 			downstreamHost: r.RemoteAddr,
 		}
+		connections[user] = connectionTracker
 
 		connectionTracker.Debug("New connection")
 
@@ -105,42 +108,6 @@ func main() {
 		}
 		connectionTracker.upstreamConn = proxiedCon
 		connectionTracker.upstreamCancellingChan = make(chan int, 1)
-		connectionTracker.Info("Connected to upstream")
-
-		router.OnHostRebalance(func(hosts [][2]string) error {
-			connectionTracker.Info("Triggered OnHostRebalance callback returning hosts", "hosts", hosts)
-			for _, affectedHost := range hosts {
-				oldHost := affectedHost[0]
-				newHost := affectedHost[1]
-				connectionTracker.Debug("Checking host", "oldHost", oldHost)
-				if connectionTracker.upstreamHost == oldHost {
-					connectionTracker.Info("Rebalancing connection from", "old", oldHost, "new", newHost)
-					connectionTracker.cancelUpstream()
-					connectionTracker.upstreamHost = newHost
-
-					connectionTracker.Debug("Waiting for upstream to cancel", "old", oldHost)
-					select {
-					case <-connectionTracker.upstreamCancellingChan:
-						connectionTracker.Debug("Successfully received cancellation signal")
-					case <-time.After(5 * time.Second):
-						connectionTracker.Error("Timeout waiting for upstream cancellation, proceeding anyway")
-					}
-
-					connectionTracker.Debug("Rebalancing host", "host", host, "to", newHost)
-					connectionTracker.upstreamContext, connectionTracker.cancelUpstream = context.WithCancel(context.Background())
-
-					_, err = connectToUpstreamAndProxyMessages(connectionTracker, user)
-					go handleIncomingMessagesToProxy(connectionTracker)
-					if err != nil {
-						connectionTracker.Error("Failed to reconnect to upstream", "error", err)
-						connectionTracker.Close()
-						return err
-					}
-					break
-				}
-			}
-			return nil
-		})
 		go handleIncomingMessagesToProxy(connectionTracker)
 	}))
 }
@@ -154,20 +121,71 @@ func (c *ConnectionTracker) Close() {
 	}
 }
 
+func handleRebalanceLoop(connections map[string]*ConnectionTracker) {
+	slog.Debug("Starting rebalance loop")
+	for {
+		select {
+		case hosts := <-router.RebalanceRequests():
+			slog.Debug("Received message to rebalance", "hosts", hosts)
+			upstreamHostsToConnectionTracker := make(map[string]*ConnectionTracker)
+			slog.Debug("Flat mapping ConnectionTracker to upstreamHosts", "connections", connections)
+			for _, connectionTracker := range connections {
+				upstreamHostsToConnectionTracker[connectionTracker.user] = connectionTracker
+			}
+			for _, affectedHost := range hosts {
+				recipientId := affectedHost[0]
+				newHost := affectedHost[1]
+				connectionTracker := upstreamHostsToConnectionTracker[recipientId]
+				if connectionTracker == nil {
+					slog.Debug("No connection tracker found", "user", recipientId)
+					continue
+				}
+				oldHost := connectionTracker.upstreamHost
+				connectionTracker.Debug("Checking host", "user", recipientId)
+				if connectionTracker.upstreamHost == newHost {
+					connectionTracker.Debug("No need to rebalance")
+					continue
+				}
+				connectionTracker.Debug("Waiting for upstream to cancel", "oldHost", oldHost)
+				connectionTracker.cancelUpstream()
+				connectionTracker.upstreamHost = newHost
+				select {
+				case <-connectionTracker.upstreamCancellingChan:
+					connectionTracker.Debug("Successfully received cancellation signal")
+				case <-time.After(5 * time.Second):
+					connectionTracker.Error("Timeout waiting for upstream cancellation, proceeding anyway")
+				}
+
+				connectionTracker.upstreamContext, connectionTracker.cancelUpstream = context.WithCancel(context.Background())
+				connectionTracker.Info("Rebalancing connection from", "old", oldHost, "new", newHost)
+				_, err := connectToUpstreamAndProxyMessages(connectionTracker, connectionTracker.user)
+				go handleIncomingMessagesToProxy(connectionTracker)
+				delete(connections, recipientId)
+				connections[recipientId] = connectionTracker
+				if err != nil {
+					connectionTracker.Error("Failed to reconnect to upstream", "error", err)
+					connectionTracker.Close()
+				}
+			}
+		case <-time.After(1 * time.Second):
+		}
+	}
+}
+
 func handleIncomingMessagesToProxy(connectionTracker *ConnectionTracker) {
 	for {
-		clientConnection := connectionTracker.downstreamConn
-		upstreamConnection := connectionTracker.upstreamConn
-		msg, op, err := wsutil.ReadClientData(clientConnection)
-		if err != nil {
-			connectionTracker.Error("Failed to read from downstream", "error", err)
-			return
-		}
 		select {
 		case <-connectionTracker.upstreamContext.Done():
 			connectionTracker.Debug("Upstream context done")
 			return
 		default:
+			clientConnection := connectionTracker.downstreamConn
+			upstreamConnection := connectionTracker.upstreamConn
+			msg, op, err := wsutil.ReadClientData(clientConnection)
+			if err != nil {
+				connectionTracker.Error("Failed to read from downstream", "error", err)
+				return
+			}
 			//TODO: SEGFAULT here in case upstreamConnection is nil - due to failure or whatever. network delays could cause this
 			err = wsutil.WriteClientMessage(upstreamConnection, op, msg)
 			if err != nil {

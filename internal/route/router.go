@@ -18,7 +18,7 @@ type Logger interface {
 type RouterImpl interface {
 	InitializeHosts() error
 	Route(recipientId string) string
-	OnHostRebalance(func([][2]string) error)
+	RebalanceRequests() <-chan [][2]string
 	Logger
 }
 

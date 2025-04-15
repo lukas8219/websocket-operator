@@ -20,11 +20,11 @@ type KubernetesRouter struct {
 	k8sClient                   *kubernetes.Clientset
 	cacheStore                  cache.Store
 	loadbalancer                *rendezvous.Rendezvous
-	rebalancedHostTrigger       []func([][2]string) error
 	alreadyCalculatedRecipients map[string]string
 	handleUpdatedEndpoints      func([]string)
 	handleCreatedEnpoints       func([]string)
 	handleDeletedEnpoints       func([]string)
+	rebalanceRequest            chan [][2]string
 }
 
 func (k *KubernetesRouter) Info(msg string, args ...any) {
@@ -53,7 +53,7 @@ func NewRouter(loadbalancer *rendezvous.Rendezvous) *KubernetesRouter {
 		k8sClient:                   client,
 		alreadyCalculatedRecipients: make(map[string]string),
 		loadbalancer:                loadbalancer,
-		rebalancedHostTrigger:       make([]func([][2]string) error, 0),
+		rebalanceRequest:            make(chan [][2]string, 1),
 	}
 }
 
@@ -114,35 +114,29 @@ func (k *KubernetesRouter) InitializeHosts() error {
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				hosts := make([]string, 0)
 				//This is nuts, yes. But i'll look into re-writing the Rendezvous to be customized for this use case
-				if len(addedHosts) > 0 {
-					for _, subset := range oldObj.(*v1.Endpoints).Subsets {
-						for _, address := range subset.Addresses {
-							k.loadbalancer.Remove(address.IP)
-							delete(addedHosts, address.IP)
-						}
+				for _, subset := range oldObj.(*v1.Endpoints).Subsets {
+					for _, address := range subset.Addresses {
+						k.loadbalancer.Remove(address.IP)
+						delete(addedHosts, address.IP)
 					}
 				}
 				for _, subset := range newObj.(*v1.Endpoints).Subsets {
 					for _, address := range subset.Addresses {
 						hosts = append(hosts, address.IP)
+						k.loadbalancer.Add(address.IP)
 					}
-				}
-				for _, host := range hosts {
-					k.loadbalancer.Add(host)
-					addedHosts[host] = true
 				}
 				k.Info("Updated addresses", "hosts", hosts)
 				rebalanceHosts := make([][2]string, 0)
 				//re-calculate computed recipients to check re-balancing
-				k.Debug("Already calculated recipients", "recipients", k.alreadyCalculatedRecipients)
 				for recipientId, host := range k.alreadyCalculatedRecipients {
 					newlyCalculatedHost := k.loadbalancer.Lookup(recipientId)
 					k.Debug("Checking rebalance", "recipientId", recipientId, "oldHost", host, "newHost", newlyCalculatedHost)
-					if newlyCalculatedHost != host {
-						hostWithPort := fmt.Sprintf("%s:3000", host)
-						newlyCalculatedHostWithPort := fmt.Sprintf("%s:3000", newlyCalculatedHost)
-						rebalanceHosts = append(rebalanceHosts, [2]string{hostWithPort, newlyCalculatedHostWithPort})
+					if newlyCalculatedHost == host {
+						continue
 					}
+					newlyCalculatedHostWithPort := fmt.Sprintf("%s:3000", newlyCalculatedHost)
+					rebalanceHosts = append(rebalanceHosts, [2]string{recipientId, newlyCalculatedHostWithPort})
 				}
 				if len(rebalanceHosts) > 0 {
 					k.Info("Rebalancing hosts", "hosts", rebalanceHosts)
@@ -173,22 +167,11 @@ func (k *KubernetesRouter) InitializeHosts() error {
 	return nil
 }
 
-func (k *KubernetesRouter) triggerRebalance(hosts [][2]string) error {
-	if k.rebalancedHostTrigger == nil {
-		k.Debug("No rebalance trigger found")
-		return nil
-	}
-
-	for _, fn := range k.rebalancedHostTrigger {
-		k.Debug("Triggering rebalance", "hosts", hosts)
-		err := fn(hosts)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+func (k *KubernetesRouter) triggerRebalance(hosts [][2]string) {
+	k.Debug("Sending rebalance request", "hosts", hosts)
+	k.rebalanceRequest <- hosts
 }
 
-func (k *KubernetesRouter) OnHostRebalance(fn func([][2]string) error) {
-	k.rebalancedHostTrigger = append(k.rebalancedHostTrigger, fn)
+func (k *KubernetesRouter) RebalanceRequests() <-chan [][2]string {
+	return k.rebalanceRequest
 }
