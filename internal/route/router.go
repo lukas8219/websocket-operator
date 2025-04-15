@@ -2,9 +2,8 @@ package route
 
 import (
 	"log/slog"
-	"lukas8219/websocket-operator/internal/kubernetes"
-
 	"lukas8219/websocket-operator/internal/dns"
+	"lukas8219/websocket-operator/internal/kubernetes"
 
 	"lukas8219/websocket-operator/internal/rendezvous"
 )
