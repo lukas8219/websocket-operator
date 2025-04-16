@@ -7,56 +7,56 @@ import (
 	"github.com/gobwas/ws/wsutil"
 )
 
-func (c *ConnectionProxierImpl) ProxyDownstreamToUpstream() (net.Conn, error) {
-	host := c.UpstreamHost
+func (p *WSProxier) ProxyDownstreamToUpstream() (net.Conn, error) {
+	host := p.tracker.UpstreamHost()
 	dialer := ws.Dialer{
 		Header: ws.HandshakeHeaderHTTP{
-			"ws-user-id": []string{c.User},
+			"ws-user-id": []string{p.tracker.User()},
 		},
 	}
-	c.Debug("Dialing upstream")
-	proxiedConn, _, _, err := dialer.Dial(c.UpstreamContext, "ws://"+host)
+	p.tracker.Debug("Dialing upstream")
+	proxiedConn, _, _, err := dialer.Dial(p.tracker.UpstreamContext(), "ws://"+host)
 	if err != nil {
-		c.Error("Failed to dial upstream", "error", err)
+		p.tracker.Error("Failed to dial upstream", "error", err)
 		return nil, err
 	}
-	c.Debug("Connected to upstream")
-	c.UpstreamConn = proxiedConn
+	p.tracker.Debug("Connected to upstream")
+	p.tracker.SetUpstreamConn(proxiedConn)
 
 	waitSignal := func() {
-		c.Debug("Closing upstream connection")
+		p.tracker.Debug("Closing upstream connection")
 		select {
-		case c.UpstreamCancellingChan <- 1:
-			c.Debug("Successfully signaled cancellation")
+		case p.tracker.UpstreamCancelChan() <- 1:
+			p.tracker.Debug("Successfully signaled cancellation")
 		default:
-			c.Debug("No one waiting for cancellation signal, skipping")
+			p.tracker.Debug("No one waiting for cancellation signal, skipping")
 		}
 	}
 
-	//Missing DEFER
+	//TODO missing defer
 	proxySidecarServerToClient := func() {
 		defer waitSignal()
 		for {
 			select {
-			case <-c.UpstreamContext.Done():
-				c.Debug("Upstream context done")
+			case <-p.tracker.UpstreamContext().Done():
+				p.tracker.Debug("Upstream context done")
 				proxiedConn.Close()
 				return
 			default:
 				//Read as client - from the server.
 				msg, op, err := wsutil.ReadServerData(proxiedConn)
 				if err != nil {
-					c.Error("Failed to read from upstream", "error", err)
+					p.tracker.Error("Failed to read from upstream", "error", err)
 					return
 				}
 				//Write as client - to the proxied connection
-				err = wsutil.WriteServerMessage(c.DownstreamConn, op, msg)
+				err = wsutil.WriteServerMessage(p.tracker.DownstreamConn(), op, msg)
 				if err != nil {
-					c.Error("Failed to write to downstream", "error", err)
+					p.tracker.Error("Failed to write to downstream", "error", err)
 					return
 				}
 				if op == ws.OpClose {
-					c.Debug("upstream server closed connection")
+					p.tracker.Debug("upstream server closed connection")
 					return
 				}
 			}

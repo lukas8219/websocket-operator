@@ -12,20 +12,22 @@ import (
 	"github.com/gobwas/ws/wsutil"
 )
 
-func createHandler(router route.RouterImpl, connections map[string]*connection.ProxiedConnectionImpl) http.HandlerFunc {
+func createHandler(router route.RouterImpl, connections map[string]*connection.Connection) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		handleConnection(router, connections, w, r)
 	}
 }
 
-func handleConnection(router route.RouterImpl, connections map[string]*connection.ProxiedConnectionImpl, w http.ResponseWriter, r *http.Request) {
+func handleConnection(router route.RouterImpl, connections map[string]*connection.Connection, w http.ResponseWriter, r *http.Request) {
 	user := r.Header.Get("ws-user-id")
 	if user == "" {
 		slog.Error("No user id provided")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	proxiedConnection := connection.NewConnectionProxier(user, r.RemoteAddr, os.Getenv("HOSTNAME"))
+	//TODO: we should only accept `NewConnection` already with client connection and host set.`
+	//As only the `connection` pkg should alter it`.
+	proxiedConnection := connection.NewConnection(user, r.RemoteAddr, os.Getenv("HOSTNAME"))
 	connections[user] = proxiedConnection
 
 	proxiedConnection.Debug("New connection")
@@ -37,7 +39,7 @@ func handleConnection(router route.RouterImpl, connections map[string]*connectio
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	proxiedConnection.UpstreamHost = host
+	proxiedConnection.SetUpstreamHost(host)
 	proxiedConnection.Debug("Upgrading HTTP connection")
 	upgrader := ws.HTTPUpgrader{
 		Header: http.Header{
