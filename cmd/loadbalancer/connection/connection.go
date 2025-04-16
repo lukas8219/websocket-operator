@@ -23,12 +23,13 @@ func NewConnection(user, upstreamHost, downstreamHost string, downstreamConn net
 
 // Handle manages the connection lifecycle
 func (c *Connection) Handle() {
-	defer c.Close()
+	//defer c.Close()
 
-	_, err := c.ProxyDownstreamToUpstream()
+	proxiedConn, err := c.ProxyDownstreamToUpstream()
 	if err != nil {
 		return
 	}
+	c.Tracker.SetUpstreamConn(proxiedConn)
 
 	c.ProxyUpstreamToDownstream()
 }

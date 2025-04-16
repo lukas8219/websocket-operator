@@ -1,6 +1,7 @@
 package connection
 
 import (
+	"context"
 	"net"
 
 	"github.com/gobwas/ws"
@@ -14,19 +15,23 @@ func (p *WSProxier) ProxyDownstreamToUpstream() (net.Conn, error) {
 			"ws-user-id": []string{p.tracker.User()},
 		},
 	}
+
 	p.tracker.Debug("Dialing upstream")
-	proxiedConn, _, _, err := dialer.Dial(p.tracker.UpstreamContext(), "ws://"+host)
+	upstreamContext := p.tracker.UpstreamContext()
+	upstreamCancelChan := p.tracker.UpstreamCancelChan()
+	downstreamConn := p.tracker.DownstreamConn()
+
+	proxiedConn, _, _, err := dialer.Dial(context.Background(), "ws://"+host)
 	if err != nil {
 		p.tracker.Error("Failed to dial upstream", "error", err)
 		return nil, err
 	}
 	p.tracker.Debug("Connected to upstream")
-	p.tracker.SetUpstreamConn(proxiedConn)
 
 	waitSignal := func() {
 		p.tracker.Debug("Closing upstream connection")
 		select {
-		case p.tracker.UpstreamCancelChan() <- 1:
+		case upstreamCancelChan <- 1:
 			p.tracker.Debug("Successfully signaled cancellation")
 		default:
 			p.tracker.Debug("No one waiting for cancellation signal, skipping")
@@ -38,8 +43,8 @@ func (p *WSProxier) ProxyDownstreamToUpstream() (net.Conn, error) {
 		defer waitSignal()
 		for {
 			select {
-			case <-p.tracker.UpstreamContext().Done():
-				p.tracker.Debug("Upstream context done")
+			case <-upstreamContext.Done():
+				p.tracker.Debug("upstream to downstream context done")
 				proxiedConn.Close()
 				return
 			default:
@@ -50,7 +55,7 @@ func (p *WSProxier) ProxyDownstreamToUpstream() (net.Conn, error) {
 					return
 				}
 				//Write as client - to the proxied connection
-				err = wsutil.WriteServerMessage(p.tracker.DownstreamConn(), op, msg)
+				err = wsutil.WriteServerMessage(downstreamConn, op, msg)
 				if err != nil {
 					p.tracker.Error("Failed to write to downstream", "error", err)
 					return

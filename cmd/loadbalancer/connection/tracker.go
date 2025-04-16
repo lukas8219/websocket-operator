@@ -25,6 +25,9 @@ type ConnectionTracker interface {
 	UpstreamContext() context.Context
 	UpstreamCancelChan() chan int
 	SetUpstreamConn(conn net.Conn)
+	SetUpstreamHost(host string)
+	SetDownstreamConn(conn net.Conn)
+	SwitchUpstreamHost(host string)
 }
 
 // Tracker implements ConnectionTracker
@@ -48,6 +51,13 @@ func (t *Tracker) DownstreamConn() net.Conn         { return t.downstreamConn }
 func (t *Tracker) UpstreamContext() context.Context { return t.ctx }
 func (t *Tracker) UpstreamCancelChan() chan int     { return t.cancelChan }
 func (t *Tracker) SetUpstreamConn(conn net.Conn)    { t.upstreamConn = conn }
+func (t *Tracker) SetUpstreamHost(host string)      { t.upstreamHost = host }
+func (t *Tracker) SetDownstreamConn(conn net.Conn)  { t.downstreamConn = conn }
+func (t *Tracker) SwitchUpstreamHost(host string) {
+	t.cancelFunc()
+	t.ctx, t.cancelFunc = context.WithCancel(context.Background())
+	t.upstreamHost = host
+}
 
 // Logging methods with chaining
 func (t *Tracker) Info(message string, args ...any) Logger {

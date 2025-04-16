@@ -1,34 +1,43 @@
 package connection
 
 import (
+	"context"
+	"log/slog"
+	"net"
+
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 )
 
 func (p *WSProxier) ProxyUpstreamToDownstream() {
+	go _proxyUpstreamToDownstream(p.tracker.UpstreamContext(), p.tracker.User(), p.tracker.DownstreamConn(), p.tracker.UpstreamConn())
+}
+
+func _proxyUpstreamToDownstream(ctx context.Context, user string, downstreamConn net.Conn, upstreamConn net.Conn) {
+	log := slog.With("user", user).
+		With("upstreamHost", upstreamConn.RemoteAddr().String()).
+		With("downstreamHost", downstreamConn.RemoteAddr().String())
 	for {
 		select {
-		case <-p.tracker.UpstreamContext().Done():
-			p.tracker.Debug("Upstream context done")
+		case <-ctx.Done():
+			log.Debug("downstream to upstream context done")
 			return
 		default:
-			clientConnection := p.tracker.DownstreamConn()
-			upstreamConnection := p.tracker.UpstreamConn()
-			msg, op, err := wsutil.ReadClientData(clientConnection)
+			msg, op, err := wsutil.ReadClientData(downstreamConn)
 			if err != nil {
-				p.tracker.Error("Failed to read from downstream", "error", err)
+				log.Error("Failed to read from downstream", "error", err)
 				return
 			}
-			//TODO: SEGFAULT here in case upstreamConnection is nil - due to failure or whatever. network delays could cause this
-			err = wsutil.WriteClientMessage(upstreamConnection, op, msg)
+			err = wsutil.WriteClientMessage(upstreamConn, op, msg)
 			if err != nil {
-				p.tracker.Error("Failed to write to upstream", "error", err)
+				log.Error("Failed to write to upstream", "error", err)
 				return
 			}
 			if op == ws.OpClose {
-				p.tracker.Debug("downstream server closed connection")
+				log.Debug("downstream server closed connection")
 				return
 			}
 		}
 	}
+
 }

@@ -27,15 +27,13 @@ func handleRebalanceLoop(router route.RouterImpl, connections map[string]*connec
 					continue
 				}
 				oldHost := connectionTracker.UpstreamHost()
-				connectionTracker.Debug("Checking host", "user", recipientId)
 				if connectionTracker.UpstreamHost() == newHost {
 					connectionTracker.Debug("No need to rebalance")
 					continue
 				}
 				connectionTracker.Debug("Waiting for upstream to cancel", "oldHost", oldHost)
-				//not sure w should do it here
-				connectionTracker.UpstreamContext()
-				connectionTracker.SetUpstreamHost(newHost)
+				connectionTracker.SwitchUpstreamHost(newHost)
+
 				select {
 				case <-connectionTracker.UpstreamCancelChan():
 					connectionTracker.Debug("Successfully received cancellation signal")
@@ -43,17 +41,12 @@ func handleRebalanceLoop(router route.RouterImpl, connections map[string]*connec
 					connectionTracker.Error("Timeout waiting for upstream cancellation, proceeding anyway")
 				}
 
-				delete(connections, recipientId)
 				connections[recipientId] = connectionTracker
 				//TODO: gut feeling here. either we move rebalance to the connection pkg or we re-design stuff
 				//connectionTracker.UpstreamContext, connectionTracker.CancelUpstream = context.WithCancel(context.Background())
 				connectionTracker.Info("Rebalancing connection from", "old", oldHost, "new", newHost)
-				_, err := connectionTracker.ProxyDownstreamToUpstream()
-				go connectionTracker.Proxier.ProxyUpstreamToDownstream()
-				if err != nil {
-					connectionTracker.Error("Failed to reconnect to upstream", "error", err)
-					connectionTracker.Close()
-				}
+				//TODO: stopping down -> up could cause issues if this is mid read/write
+				go connectionTracker.Handle()
 			}
 		}
 	}
