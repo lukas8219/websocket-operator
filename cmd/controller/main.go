@@ -286,6 +286,7 @@ func createPatch(deployment *appsv1.Deployment) ([]byte, error) {
 				},
 			},
 		},
+		Command: []string{"./sidecar", "-debug"},
 	}
 
 	containerPatch := map[string]interface{}{

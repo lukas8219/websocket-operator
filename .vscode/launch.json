@@ -37,7 +37,10 @@
             "program": "${workspaceFolder}/cmd/loadbalancer/main.go",
             "cwd": "${workspaceFolder}",
             "output": "debug",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "args": [
+                "-debug"
+            ]
         },
         {
             "name": "Debug CoreDNS Operator (Configurable Ports)",

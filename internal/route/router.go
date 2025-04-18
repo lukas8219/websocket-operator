@@ -2,9 +2,8 @@ package route
 
 import (
 	"log/slog"
-	"lukas8219/websocket-operator/internal/kubernetes"
-
 	"lukas8219/websocket-operator/internal/dns"
+	"lukas8219/websocket-operator/internal/kubernetes"
 
 	"lukas8219/websocket-operator/internal/rendezvous"
 )
@@ -18,7 +17,7 @@ type Logger interface {
 type RouterImpl interface {
 	InitializeHosts() error
 	Route(recipientId string) string
-	OnHostRebalance(func([][2]string) error)
+	RebalanceRequests() <-chan [][2]string
 	Logger
 }
 
