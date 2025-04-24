@@ -1,0 +1,67 @@
+name: Go Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install dependencies
+      run: go mod download
+
+  test-project:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [loadbalancer, sidecar, controller]
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Build ${{ matrix.project }}
+      run: go build -v ./cmd/${{ matrix.project }}/...
+
+    - name: Test ${{ matrix.project }}
+      run: go test -v ./cmd/${{ matrix.project }}/...
+
+    - name: Vet ${{ matrix.project }}
+      run: go vet ./cmd/${{ matrix.project }}/...
+
+
+
