@@ -17,8 +17,16 @@ jobs:
       with:
         go-version: '1.23'
 
+    # - name: Change chmod for Go modules
+    #   run: |
+    #     chmod -R 0755 \
+    #       ~/go/pkg/mod \
+    #       ~/.cache/go-build \
+    #       ~/.cache/golangci-lint \
+    #       ~/.cache/buf/
+
     - name: Cache Go modules
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cache/go-build
@@ -45,7 +53,7 @@ jobs:
         go-version: '1.23'
 
     - name: Cache Go modules
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cache/go-build
