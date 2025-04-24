@@ -13,7 +13,7 @@ func handleRebalanceLoop(router route.RouterImpl, connections map[string]*connec
 		select {
 		case hosts := <-router.RebalanceRequests():
 			slog.Debug("Received message to rebalance", "hosts", hosts)
-			upstreamHostsToConnectionTracker := make(map[string]*connection.Connection)
+			upstreamHostsToConnectionTracker := make(map[string]*connection.Connection, len(connections))
 			slog.Debug("Flat mapping ConnectionTracker to upstreamHosts", "connections", connections)
 			for _, connectionTracker := range connections {
 				upstreamHostsToConnectionTracker[connectionTracker.User()] = connectionTracker

@@ -7,7 +7,6 @@ toolchain go1.23.7
 require (
 	github.com/buraksezer/consistent v0.10.0
 	github.com/gobwas/ws v1.4.0
-	github.com/tylertreat/BoomFilters v0.0.0-20210315201527-1a82519a3e43
 	github.com/zeebo/xxh3 v1.0.2
 	k8s.io/api v0.32.3
 	k8s.io/apimachinery v0.32.3
@@ -15,7 +14,6 @@ require (
 )
 
 require (
-	github.com/d4l3k/messagediff v1.2.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
