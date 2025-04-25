@@ -1,11 +1,16 @@
 package server
 
 import (
+	"bufio"
+	"context"
 	"log/slog"
 	"lukas8219/websocket-operator/cmd/loadbalancer/connection"
 	"net"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/gobwas/ws"
 )
 
 type MockRouter struct {
@@ -24,29 +29,49 @@ func (m *MockRouter) GetAllUpstreamHosts() []string {
 }
 func (m *MockRouter) InitializeHosts() error { return nil }
 
-type MockConnection struct {
-	*connection.Connection
-	upstreamHost       string
-	user               string
-	upstreamCancelChan chan struct{}
+type NetConnectionMock struct {
+	net.Conn
+	remoteAddr net.Addr
+	isClosed   bool
 }
 
-type MockProxier struct{}
-
-func (m *MockProxier) ProxyDownstreamToUpstream() (net.Conn, error) {
-	return nil, nil
+func (m *NetConnectionMock) Read(b []byte) (int, error) {
+	return 0, nil
 }
 
-func (m *MockProxier) ProxyUpstreamToDownstream() {
-
+func (m *NetConnectionMock) Write(b []byte) (int, error) {
+	return 0, nil
 }
 
-func NewMockConnection(user, upstreamHost string) *connection.Connection {
-	conn := &net.TCPConn{}
-	tracker := connection.NewTracker(user, upstreamHost, "downstream", conn)
+func (m *NetConnectionMock) RemoteAddr() net.Addr {
+	return m.remoteAddr
+}
+
+func (m *NetConnectionMock) Close() error {
+	m.isClosed = true
+	return nil
+}
+
+type MockWSDialer struct {
+	dialCalls   []string
+	connections []*NetConnectionMock
+	mu          sync.RWMutex
+}
+
+func (m *MockWSDialer) Dial(ctx context.Context, urlstr string) (net.Conn, *bufio.Reader, ws.Handshake, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.dialCalls = append(m.dialCalls, urlstr)
+	mockConn := &NetConnectionMock{remoteAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}}
+	m.connections = append(m.connections, mockConn)
+	return mockConn, nil, ws.Handshake{}, nil
+}
+
+func NewMockConnection(user, upstreamHost string, downstreamConn net.Conn, wsDialer *MockWSDialer) *connection.Connection {
+	tracker := connection.NewTracker(user, upstreamHost, "downstream", downstreamConn)
 	return &connection.Connection{
 		Tracker: tracker,
-		Proxier: &MockProxier{},
+		Proxier: connection.NewWSProxier(tracker, wsDialer),
 	}
 }
 
@@ -58,32 +83,27 @@ func TestHandleRebalanceLoop(t *testing.T) {
 
 	go handleRebalanceLoop(mockRouter, connections)
 
-	t.Run("No connection tracker found", func(t *testing.T) {
-		mockRouter.rebalanceChan <- [][2]string{{"non-existent", "new-host:3000"}}
-	})
-
-	t.Run("No need to rebalance - same host", func(t *testing.T) {
-		mockConn := NewMockConnection("user1", "same-host:3000")
-		connections["user1"] = mockConn
-
-		mockRouter.rebalanceChan <- [][2]string{{"user1", "same-host:3000"}}
-	})
-
-	t.Run("Successfully received cancellation signal", func(t *testing.T) {
-		mockConn := NewMockConnection("user2", "old-host:3000")
-		connections["user2"] = mockConn
-
-		go func() {
-			mockConn.Tracker.UpstreamCancelChan() <- 1
-		}()
-		mockRouter.rebalanceChan <- [][2]string{{"user2", "new-host:3000"}}
+	t.Run("Sucessfully rebalanced", func(t *testing.T) {
+		mockDownstreamConn := &NetConnectionMock{remoteAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}}
+		mockWSDialer := &MockWSDialer{}
+		mockConn := NewMockConnection("user1", "old-host:3000", mockDownstreamConn, mockWSDialer)
+		go mockConn.Handle()
+		connections[mockConn.Tracker.User()] = mockConn
+		mockConn.Tracker.UpstreamCancelChan() <- 1
+		mockRouter.rebalanceChan <- [][2]string{{mockConn.Tracker.User(), "new-host:3000"}}
 		time.Sleep(100 * time.Millisecond)
 
-		//Expect Switch Host + Handle to be called
 		if mockConn.UpstreamHost() != "new-host:3000" {
 			t.Errorf("Expected host to be updated to new-host:3000, got %s", mockConn.UpstreamHost())
 		}
+		if len(mockWSDialer.dialCalls) != 2 {
+			t.Errorf("Expected dial to be called twice, got %d", len(mockWSDialer.dialCalls))
+			return
+		}
+		if mockWSDialer.dialCalls[1] != "ws://new-host:3000" {
+			t.Errorf("Expected dial to be called with ws://new-host:3000, got %s", mockWSDialer.dialCalls[1])
+		}
+
 	})
 
-	//TODO: change interface to use io.ReadWriter and inject Dialer so we can test new connections
 }

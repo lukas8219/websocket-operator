@@ -2,6 +2,8 @@ package connection
 
 import (
 	"net"
+
+	"github.com/gobwas/ws"
 )
 
 // Connection combines tracking and proxying capabilities
@@ -13,7 +15,12 @@ type Connection struct {
 // NewConnection creates a fully configured connection
 func NewConnection(user, upstreamHost, downstreamHost string, downstreamConn net.Conn) *Connection {
 	tracker := NewTracker(user, upstreamHost, downstreamHost, downstreamConn)
-	proxier := NewWSProxier(tracker)
+	dialer := ws.Dialer{
+		Header: ws.HandshakeHeaderHTTP{
+			"ws-user-id": []string{user},
+		},
+	}
+	proxier := NewWSProxier(tracker, &dialer)
 
 	return &Connection{
 		Tracker: tracker,
@@ -23,8 +30,6 @@ func NewConnection(user, upstreamHost, downstreamHost string, downstreamConn net
 
 // Handle manages the connection lifecycle
 func (c *Connection) Handle() {
-	//defer c.Close()
-
 	proxiedConn, err := c.ProxyDownstreamToUpstream()
 	if err != nil {
 		return
