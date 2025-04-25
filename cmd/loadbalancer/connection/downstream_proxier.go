@@ -10,18 +10,13 @@ import (
 
 func (p *WSProxier) ProxyDownstreamToUpstream() (net.Conn, error) {
 	host := p.tracker.UpstreamHost()
-	dialer := ws.Dialer{
-		Header: ws.HandshakeHeaderHTTP{
-			"ws-user-id": []string{p.tracker.User()},
-		},
-	}
 
 	p.tracker.Debug("Dialing upstream")
 	upstreamContext := p.tracker.UpstreamContext()
 	upstreamCancelChan := p.tracker.UpstreamCancelChan()
 	downstreamConn := p.tracker.DownstreamConn()
 
-	proxiedConn, _, _, err := dialer.Dial(context.Background(), "ws://"+host)
+	proxiedConn, _, _, err := p.dialer.Dial(context.Background(), "ws://"+host)
 	if err != nil {
 		p.tracker.Error("Failed to dial upstream", "error", err)
 		return nil, err
@@ -35,6 +30,10 @@ func (p *WSProxier) ProxyDownstreamToUpstream() (net.Conn, error) {
 			p.tracker.Debug("Successfully signaled cancellation")
 		default:
 			p.tracker.Debug("No one waiting for cancellation signal, skipping")
+		}
+		err := proxiedConn.Close()
+		if err != nil {
+			p.tracker.Error("Failed to close upstream connection", "error", err)
 		}
 	}
 

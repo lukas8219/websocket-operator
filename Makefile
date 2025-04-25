@@ -18,3 +18,10 @@ gen-certs:
 	@echo "Generating TLS certificates..."
 	./scripts/gen-certs.sh
 
+test:
+	@echo "Running tests..."
+	go test -v ./...
+
+test-race:
+	@echo "Running tests with race detector..."
+	go test -race -v ./...
