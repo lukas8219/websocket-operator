@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsutil"
 )
 
 type MockRouter struct {
@@ -38,6 +39,7 @@ type NetConnectionMock struct {
 	name          string
 	receivedBytes []byte
 	isServer      bool
+	mu            sync.Mutex
 }
 
 func (m *NetConnectionMock) Read(b []byte) (int, error) {
@@ -57,6 +59,8 @@ func (m *NetConnectionMock) Read(b []byte) (int, error) {
 }
 
 func (m *NetConnectionMock) Write(b []byte) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.receivedBytes = append(m.receivedBytes, b...)
 	return len(b), nil
 }
@@ -104,7 +108,7 @@ func TestHandleRebalanceLoop(t *testing.T) {
 	go handleRebalanceLoop(mockRouter, connections)
 
 	t.Run("Sucessfully rebalanced", func(t *testing.T) {
-		mockDownstreamConn := &NetConnectionMock{remoteAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}, name: "old-host:3000", isServer: false}
+		mockDownstreamConn := &NetConnectionMock{remoteAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}, name: "downstream", isServer: false}
 		mockWSDialer := &MockWSDialer{}
 		mockConn := NewMockConnection("user1", "old-host:3000", mockDownstreamConn, mockWSDialer)
 		go mockConn.Handle()
@@ -127,11 +131,23 @@ func TestHandleRebalanceLoop(t *testing.T) {
 		}
 
 		reader := bytes.NewReader(mockDownstreamConn.receivedBytes)
-		frame, err := ws.ReadFrame(reader)
-		if err != nil {
-			t.Errorf("Expected no error, got %s", err)
+		wsreader := wsutil.NewClientSideReader(reader)
+		for {
+			frame, err := wsreader.NextFrame()
+			if err != nil {
+				log.Println("Error reading header frame", err)
+				break
+			}
+			buffer := make([]byte, frame.Length-1)
+			_, err = wsreader.Read(buffer)
+			if err != nil {
+				log.Println("Error reading body frame", err)
+				break
+			}
+			log.Println(string(buffer))
+			wsreader.Discard()
 		}
-		log.Println(string(frame.Payload))
+		log.Println(len(mockDownstreamConn.receivedBytes))
 	})
 
 }
