@@ -2,7 +2,9 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"log"
 	"log/slog"
 	"lukas8219/websocket-operator/cmd/loadbalancer/connection"
 	"net"
@@ -31,16 +33,32 @@ func (m *MockRouter) InitializeHosts() error { return nil }
 
 type NetConnectionMock struct {
 	net.Conn
-	remoteAddr net.Addr
-	isClosed   bool
+	remoteAddr    net.Addr
+	isClosed      bool
+	name          string
+	receivedBytes []byte
+	isServer      bool
 }
 
 func (m *NetConnectionMock) Read(b []byte) (int, error) {
-	return 0, nil
+	message := []byte(m.name)
+
+	frame := ws.NewBinaryFrame(message)
+
+	// If masked, apply masking
+	if !m.isServer {
+		frame = ws.MaskFrame(frame)
+	}
+	compiledFrame, err := ws.CompileFrame(frame)
+	if err != nil {
+		return 0, err
+	}
+	return copy(b, compiledFrame), nil
 }
 
 func (m *NetConnectionMock) Write(b []byte) (int, error) {
-	return 0, nil
+	m.receivedBytes = append(m.receivedBytes, b...)
+	return len(b), nil
 }
 
 func (m *NetConnectionMock) RemoteAddr() net.Addr {
@@ -59,12 +77,14 @@ type MockWSDialer struct {
 }
 
 func (m *MockWSDialer) Dial(ctx context.Context, urlstr string) (net.Conn, *bufio.Reader, ws.Handshake, error) {
+	log.Println("Dialing", urlstr)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.dialCalls = append(m.dialCalls, urlstr)
-	mockConn := &NetConnectionMock{remoteAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}}
+	mockConn := &NetConnectionMock{remoteAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}, name: urlstr, isServer: true}
 	m.connections = append(m.connections, mockConn)
-	return mockConn, nil, ws.Handshake{}, nil
+	reader := bufio.NewReader(mockConn)
+	return mockConn, reader, ws.Handshake{}, nil
 }
 
 func NewMockConnection(user, upstreamHost string, downstreamConn net.Conn, wsDialer *MockWSDialer) *connection.Connection {
@@ -84,12 +104,14 @@ func TestHandleRebalanceLoop(t *testing.T) {
 	go handleRebalanceLoop(mockRouter, connections)
 
 	t.Run("Sucessfully rebalanced", func(t *testing.T) {
-		mockDownstreamConn := &NetConnectionMock{remoteAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}}
+		mockDownstreamConn := &NetConnectionMock{remoteAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}, name: "old-host:3000", isServer: false}
 		mockWSDialer := &MockWSDialer{}
 		mockConn := NewMockConnection("user1", "old-host:3000", mockDownstreamConn, mockWSDialer)
 		go mockConn.Handle()
 		connections[mockConn.Tracker.User()] = mockConn
+
 		mockConn.Tracker.UpstreamCancelChan() <- 1
+		time.Sleep(100 * time.Millisecond)
 		mockRouter.rebalanceChan <- [][2]string{{mockConn.Tracker.User(), "new-host:3000"}}
 		time.Sleep(100 * time.Millisecond)
 
@@ -104,6 +126,12 @@ func TestHandleRebalanceLoop(t *testing.T) {
 			t.Errorf("Expected dial to be called with ws://new-host:3000, got %s", mockWSDialer.dialCalls[1])
 		}
 
+		reader := bytes.NewReader(mockDownstreamConn.receivedBytes)
+		frame, err := ws.ReadFrame(reader)
+		if err != nil {
+			t.Errorf("Expected no error, got %s", err)
+		}
+		log.Println(string(frame.Payload))
 	})
 
 }
