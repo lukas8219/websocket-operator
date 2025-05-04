@@ -159,20 +159,6 @@ func (t *Tracker) Debug(message string, args ...any) Logger {
 	return t
 }
 
-func (t *Tracker) Close() {
-	t.mu.Lock()
-	upstreamConn := t.upstreamConn
-	downstreamConn := t.downstreamConn
-	t.mu.Unlock()
-
-	if upstreamConn != nil {
-		upstreamConn.Close()
-	}
-	if downstreamConn != nil {
-		downstreamConn.Close()
-	}
-}
-
 // NewTracker creates a new connection tracker
 func NewTracker(user, upstreamHost, downstreamHost string, downstreamConn net.Conn) *Tracker {
 	ctx, cancel := context.WithCancel(context.Background())
