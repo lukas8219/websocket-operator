@@ -12,6 +12,7 @@ import (
 type Proxier interface {
 	ProxyUpstreamToDownstream()
 	ProxyDownstreamToUpstream() (net.Conn, error)
+	Close()
 }
 
 type WSDialer interface {
@@ -20,14 +21,26 @@ type WSDialer interface {
 
 // WSProxier implements Proxier for WebSocket connections
 type WSProxier struct {
-	tracker ConnectionTracker
+	tracker *Tracker
 	dialer  WSDialer
 }
 
 // NewWSProxier creates a new WebSocket proxier
-func NewWSProxier(tracker ConnectionTracker, dialer WSDialer) *WSProxier {
+func NewWSProxier(tracker *Tracker, dialer WSDialer) *WSProxier {
 	return &WSProxier{
 		tracker: tracker,
 		dialer:  dialer,
+	}
+}
+
+func (p *WSProxier) Close() {
+	upstreamConn := p.tracker.UpstreamConn()
+	downstreamConn := p.tracker.DownstreamConn()
+
+	if upstreamConn != nil {
+		upstreamConn.Close()
+	}
+	if downstreamConn != nil {
+		downstreamConn.Close()
 	}
 }

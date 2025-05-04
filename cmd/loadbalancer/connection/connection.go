@@ -38,3 +38,7 @@ func (c *Connection) Handle() {
 
 	c.ProxyUpstreamToDownstream()
 }
+
+func (c *Connection) Close() {
+	c.Proxier.Close()
+}
