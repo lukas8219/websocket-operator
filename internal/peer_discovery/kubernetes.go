@@ -41,6 +41,10 @@ var (
 	EMPTY_ARRAY = make([]string, 0)
 )
 
+const (
+	MAX_KUBERNETES_ENDPOINT_SLICE_SIZE = 1000
+)
+
 // Remove OR MOVE
 func createClient() *kubernetes.Clientset {
 	config, err := rest.InClusterConfig()
@@ -89,7 +93,7 @@ func (k *KubernetesPeerDiscovery) Initialize() error {
 }
 
 func getAllAddressesFromEndpoint(endpoint *v1.Endpoints) []string {
-	hosts := make([]string, 0)
+	hosts := make([]string, 256)
 	for _, address := range endpoint.Subsets {
 		for _, address := range address.Addresses {
 			if address.IP != "" {

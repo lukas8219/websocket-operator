@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"strconv"
 	"time"
 )
 
@@ -45,10 +44,11 @@ func (r *DnsPeerDiscovery) CurrentHosts() ([]Peer, error) {
 	for i, srv := range addrs {
 		addr, err := resolver.LookupIP(context.Background(), "ip", srv.Target)
 		if err != nil {
-			return nil, err
+			slog.Warn("Failed to resolve ip - skipping", srv.Target)
+			continue
 		}
 		hostname := addr[0].String()
-		port := strconv.Itoa(int(srv.Port))
+		port := string(srv.Port)
 		peers[i] = Peer{
 			hostname,
 			port,
