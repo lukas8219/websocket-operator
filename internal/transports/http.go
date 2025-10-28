@@ -36,7 +36,7 @@ func (h *HttpTransport) Write(
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	messageWithOpCode := append([]byte{byte(OpCode)}, Data...)
-	url := "http://" + peer.Hostname() + ":" + peer.Port() + "/message"
+	url := "http://" + peer.SocketAddres() + "/message"
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(messageWithOpCode))
 	if err != nil {
 		slog.Error("failed to create request", "error", err)

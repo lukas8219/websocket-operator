@@ -117,7 +117,7 @@ func mapToPeers(hosts []string) []Peer {
 	for _, address := range hosts {
 		mappedHosts = append(mappedHosts, Peer{
 			hostname: address,
-			port:     "3000",
+			port:     3000,
 		})
 	}
 	return mappedHosts

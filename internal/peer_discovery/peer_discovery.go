@@ -1,12 +1,13 @@
 package peer_discovery
 
 import (
+	"fmt"
 	"lukas8219/websocket-operator/internal/diff"
 )
 
 type Peer struct {
 	hostname string
-	port     string
+	port     uint16
 }
 
 func (p Peer) Hostname() string {
@@ -17,8 +18,12 @@ func (p *Peer) String() string {
 	return p.hostname
 }
 
-func (p Peer) Port() string {
+func (p Peer) Port() uint16 {
 	return p.port
+}
+
+func (p Peer) SocketAddres() string {
+	return fmt.Sprintf("%s:%d", p.hostname, p.port)
 }
 
 type PeerDiscovery interface {
@@ -28,7 +33,7 @@ type PeerDiscovery interface {
 	Mode() PeerDiscoveryMode
 }
 
-func NewPeer(hostname string, port string) Peer {
+func NewPeer(hostname string, port uint16) Peer {
 	return Peer{hostname, port}
 }
 

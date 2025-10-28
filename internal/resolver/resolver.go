@@ -32,5 +32,5 @@ func (r *Resolver) Lookup(Recipient []byte) (peerDiscovery.Peer, error) {
 		return peerDiscovery.Peer{}, error
 	}
 	member := r.hashingAlgorithm.LocateKey(Recipient)
-	return peerDiscovery.NewPeer(member.GetMember(), member.GetMember()), nil
+	return peerDiscovery.NewPeer(member.GetMember(), 3000), nil
 }

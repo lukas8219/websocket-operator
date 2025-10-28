@@ -44,11 +44,11 @@ func (r *DnsPeerDiscovery) CurrentHosts() ([]Peer, error) {
 	for i, srv := range addrs {
 		addr, err := resolver.LookupIP(context.Background(), "ip", srv.Target)
 		if err != nil {
-			slog.Warn("Failed to resolve ip - skipping", srv.Target)
+			slog.Warn("Failed to resolve ip - skipping", "ip", srv.Target)
 			continue
 		}
 		hostname := addr[0].String()
-		port := string(srv.Port)
+		port := srv.Port
 		peers[i] = Peer{
 			hostname,
 			port,
