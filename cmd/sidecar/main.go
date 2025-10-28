@@ -6,8 +6,11 @@ import (
 	"flag"
 	"io"
 	"log/slog"
-	"lukas8219/websocket-operator/cmd/sidecar/proxy"
 	"lukas8219/websocket-operator/internal/logger"
+	"lukas8219/websocket-operator/internal/peer_discovery"
+	"lukas8219/websocket-operator/internal/rendezvous"
+	"lukas8219/websocket-operator/internal/resolver"
+	"lukas8219/websocket-operator/internal/transports"
 	"net"
 	"net/http"
 	"os"
@@ -23,6 +26,7 @@ type ConnectionTracker struct {
 	downstreamHost string
 	upstreamConn   net.Conn
 	downstreamConn net.Conn
+	transports.Transport
 }
 
 func (c *ConnectionTracker) Info(message string, args ...any) *ConnectionTracker {
@@ -51,11 +55,15 @@ var incomingMessageStruct = reflect.StructOf([]reflect.StructField{
 func main() {
 	port := flag.String("port", "3000", "Port to listen on")
 	targetPort := flag.String("targetPort", "3001", "Port to target")
-	mode := flag.String("mode", "kubernetes", "Mode to use")
+	// mode := flag.String("mode", "kubernetes", "Mode to use")
 	debug := flag.Bool("debug", false, "Debug mode")
 	flag.Parse()
 	logger.SetupLogger(*debug)
-	proxy.InitializeProxy(*mode)
+	//TODO move to config
+	peerDiscovery := peer_discovery.NewKubernetes("default", "ws-headless-proxy")
+	resolver := resolver.New(peerDiscovery, rendezvous.NewDefault())
+	transport := transports.NewHTTPTransport(*resolver)
+
 	slog.Info("Starting server", "port", *port)
 	// Map to store active WebSocket connections
 	// Key: user ID, Value: ConnectionTracker
@@ -115,6 +123,7 @@ func main() {
 			downstreamHost: r.RemoteAddr,
 			upstreamConn:   proxiedConn,
 			downstreamConn: clientConn,
+			Transport:      &transport,
 		}
 		connections[user] = connectionTracker
 		if err != nil {
@@ -143,7 +152,6 @@ func proxySidecarServerToClient(deferClose func(), connectionTracker *Connection
 			connectionTracker.Error("Failed to read from server", "error", err)
 			return
 		}
-
 		//TODO: we might need to handle `recipientId` routing messages here also
 
 		//Write as client - to the proxied connection
@@ -190,7 +198,7 @@ func handleIncomingMessagesToProxy(connections map[string]*ConnectionTracker, de
 		slog.Debug("Message recipient", "recipientId", recipientIdString, "recipientConnection", recipientConnection)
 		if recipientConnection == nil {
 			slog.Debug("No recipient found in-memory. Routing message to the correct target.", "recipientId", recipientIdString)
-			err := proxy.SendProxiedMessage(recipientIdString, msg, op)
+			err := connectionTracker.Write(rawBytes, op, msg)
 			if err != nil {
 				connectionTracker.Error("Failed to route message", "error", err)
 			}

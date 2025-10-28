@@ -25,8 +25,21 @@ type PeerDiscovery interface {
 	Initialize() error
 	CurrentHosts() ([]Peer, error)
 	NotificationChannel() chan diff.DifferenceOutput[Peer]
+	Mode() PeerDiscoveryMode
 }
 
 func NewPeer(hostname string, port string) Peer {
 	return Peer{hostname, port}
 }
+
+type PeerDiscoveryMode string
+
+type PeerDiscoveryConfig struct {
+	Mode       PeerDiscoveryMode
+	ConfigMeta interface{}
+}
+
+const (
+	PeerDiscoveryModeDns        PeerDiscoveryMode = "dns"
+	PeerDiscoveryModeKubernetes PeerDiscoveryMode = "kubernetes"
+)

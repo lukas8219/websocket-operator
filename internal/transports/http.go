@@ -16,6 +16,12 @@ type HttpTransport struct {
 	resolver rslv.Resolver
 }
 
+func NewHTTPTransport(
+	resolver rslv.Resolver,
+) HttpTransport {
+	return HttpTransport{resolver}
+}
+
 func (h *HttpTransport) Write(
 	Recipient []byte,
 	OpCode ws.OpCode,

@@ -57,6 +57,10 @@ func (r *DnsPeerDiscovery) CurrentHosts() ([]Peer, error) {
 	return peers, nil
 }
 
+func (d *DnsPeerDiscovery) Mode() PeerDiscoveryMode {
+	return PeerDiscoveryModeDns
+}
+
 // TODO review
 func createResolver() *net.Resolver {
 	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {

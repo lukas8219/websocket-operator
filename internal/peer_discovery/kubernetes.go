@@ -123,3 +123,7 @@ func (k *KubernetesPeerDiscovery) GetCurrentHosts() ([]Peer, error) {
 	mappedHosts := mapToPeers(k.currentHosts.Slice())
 	return mappedHosts, nil
 }
+
+func (k *KubernetesPeerDiscovery) Mode() PeerDiscoveryMode {
+	return PeerDiscoveryModeKubernetes
+}
