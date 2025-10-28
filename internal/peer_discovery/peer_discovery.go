@@ -47,4 +47,5 @@ type PeerDiscoveryConfig struct {
 const (
 	PeerDiscoveryModeDns        PeerDiscoveryMode = "dns"
 	PeerDiscoveryModeKubernetes PeerDiscoveryMode = "kubernetes"
+	PeerDiscoveryModeInMemory   PeerDiscoveryMode = "in-memory"
 )

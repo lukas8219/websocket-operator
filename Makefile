@@ -4,6 +4,7 @@ COMPONENTS := sidecar controller loadbalancer
 .DEFAULT_GOAL := all
 all: $(addprefix build-,$(COMPONENTS))
 
+
 build-%:
 	@echo "Building WebSocket $*"
 	COMPONENT="$*" ./scripts/build.sh

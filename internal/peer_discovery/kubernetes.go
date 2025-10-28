@@ -30,6 +30,7 @@ func NewKubernetes(namespace string, service string) *KubernetesPeerDiscovery {
 	return &KubernetesPeerDiscovery{
 		k8sNamespace:         namespace,
 		targetK8sServiceName: service,
+		k8sClient:            createClient(),
 	}
 }
 
