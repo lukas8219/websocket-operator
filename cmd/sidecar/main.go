@@ -6,9 +6,9 @@ import (
 	"flag"
 	"io"
 	"log/slog"
+	"lukas8219/websocket-operator/internal/consistent_hashing"
 	"lukas8219/websocket-operator/internal/logger"
 	"lukas8219/websocket-operator/internal/peer_discovery"
-	"lukas8219/websocket-operator/internal/rendezvous"
 	"lukas8219/websocket-operator/internal/resolver"
 	"lukas8219/websocket-operator/internal/transports"
 	"net"
@@ -61,7 +61,15 @@ func main() {
 	logger.SetupLogger(*debug)
 	//TODO move to config
 	peerDiscovery := peer_discovery.NewKubernetes("default", "ws-headless-proxy")
-	resolver := resolver.New(peerDiscovery, rendezvous.NewDefault())
+	err := peerDiscovery.Initialize()
+	if err != nil {
+		panic(err) //TODO Better handling
+	}
+	resolver := resolver.New(peerDiscovery, consistent_hashing.NewJumpHash(peerDiscovery))
+	err = resolver.Initialize()
+	if err != nil {
+		panic(err)
+	}
 	transport := transports.NewHTTPTransport(*resolver)
 
 	slog.Info("Starting server", "port", *port)
