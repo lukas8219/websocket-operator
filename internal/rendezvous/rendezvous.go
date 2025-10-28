@@ -1,6 +1,7 @@
 package rendezvous
 
 import (
+	"lukas8219/websocket-operator/internal/peer_discovery"
 	"math"
 	"sync"
 
@@ -27,6 +28,10 @@ type WeightedMember struct {
 	weight float64
 }
 
+func (w *WeightedMember) GetMember() string {
+	return w.member
+}
+
 // Config represents a structure to control the rendezvous package.
 type Config struct {
 	Hasher Hasher
@@ -40,6 +45,17 @@ type Rendezvous struct {
 	hasher  Hasher
 	members map[string]*WeightedMember
 	ring    map[uint64]*WeightedMember
+}
+
+func (r *Rendezvous) Transaction(NewNodes, RemoveNodes []peer_discovery.Peer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, Node := range NewNodes {
+		r.Add(Node.String())
+	}
+	for _, Node := range RemoveNodes {
+		r.Remove(Node.String())
+	}
 }
 
 // New creates and returns a new Rendezvous object
