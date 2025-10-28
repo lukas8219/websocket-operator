@@ -10,7 +10,8 @@ import (
 )
 
 type DnsPeerDiscovery struct {
-	srvRecord string
+	srvRecord           string
+	notificationChannel chan []Peer
 	PeerDiscovery
 }
 
@@ -24,7 +25,11 @@ func NewDNS(srvRecord string) *DnsPeerDiscovery {
 	}
 }
 
-func (r *DnsPeerDiscovery) GetCurrentHosts() ([]Peer, error) {
+func (r *DnsPeerDiscovery) NotificationChannel() chan []Peer {
+	return r.notificationChannel
+}
+
+func (r *DnsPeerDiscovery) CurrentHosts() ([]Peer, error) {
 	resolver := createResolver()
 	slog.Debug("Getting random SRV host for service", "service", r.srvRecord)
 	_, addrs, err := resolver.LookupSRV(context.Background(), "", "", r.srvRecord)

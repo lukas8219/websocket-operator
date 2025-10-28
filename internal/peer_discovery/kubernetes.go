@@ -21,6 +21,7 @@ type KubernetesPeerDiscovery struct {
 	currentHosts         goset.Set[string]
 	targetK8sServiceName string
 	k8sNamespace         string
+	notificationChannel  chan []Peer
 	PeerDiscovery
 }
 
@@ -30,6 +31,14 @@ func NewKubernetes(namespace string, service string) *KubernetesPeerDiscovery {
 		targetK8sServiceName: service,
 	}
 }
+
+func (k *KubernetesPeerDiscovery) NotificationChannel() chan []Peer {
+	return k.notificationChannel
+}
+
+var (
+	EMPTY_ARRAY = make([]string, 0)
+)
 
 // Remove OR MOVE
 func createClient() *kubernetes.Clientset {
@@ -54,35 +63,18 @@ func (k *KubernetesPeerDiscovery) Initialize() error {
 		ListerWatcher: watchList,
 		ObjectType:    &v1.Endpoints{},
 		Handler: cache.ResourceEventHandlerFuncs{
+			//TODO I think i can make it even more generic
 			AddFunc: func(obj interface{}) {
-				hosts := make([]string, 0)
-				for _, address := range obj.(*v1.Endpoints).Subsets {
-					for _, address := range address.Addresses {
-						if address.IP != "" {
-							hosts = append(hosts, address.IP)
-						}
-					}
-				}
-				k.currentHosts.InsertSlice(hosts)
+				hosts := getAllAddressesFromEndpoint(obj.(*v1.Endpoints))
+				k.updateHostsArray(hosts, EMPTY_ARRAY)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				//pre-allocate more before hand
-				hosts := make([]string, 0)
-				//This is nuts, yes. But i'll look into re-writing the Rendezvous to be customized for this use case
-				for _, subset := range newObj.(*v1.Endpoints).Subsets {
-					for _, address := range subset.Addresses {
-						hosts = append(hosts, address.IP)
-					}
-				}
-				k.currentHosts.InsertSlice(hosts)
+				hosts := getAllAddressesFromEndpoint(newObj.(*v1.Endpoints))
+				k.updateHostsArray(hosts, EMPTY_ARRAY)
 			},
 			DeleteFunc: func(obj interface{}) {
-				hosts := make([]string, 1)
-				for _, address := range obj.(*v1.Endpoints).Subsets[0].Addresses {
-					hosts = append(hosts, address.IP)
-				}
-				k.currentHosts.RemoveSlice(hosts)
-				slog.Info("Deleted addresses", "hosts", hosts)
+				hosts := getAllAddressesFromEndpoint(obj.(*v1.Endpoints))
+				k.updateHostsArray(EMPTY_ARRAY, hosts)
 			},
 		},
 	})
@@ -94,6 +86,21 @@ func (k *KubernetesPeerDiscovery) Initialize() error {
 	}
 	k.cacheStore = store
 	return nil
+}
+
+func getAllAddressesFromEndpoint(endpoint *v1.Endpoints) []string {
+	hosts := make([]string, 0)
+	for _, address := range endpoint.Subsets {
+		for _, address := range address.Addresses {
+			if address.IP != "" {
+				hosts = append(hosts, address.IP)
+			}
+		}
+	}
+	return hosts
+}
+
+func (k *KubernetesPeerDiscovery) updateHostsArray(NewHosts []string, ToRemoveHosts []string) {
 }
 
 func (k *KubernetesPeerDiscovery) GetCurrentHosts() ([]Peer, error) {

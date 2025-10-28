@@ -27,6 +27,10 @@ type WeightedMember struct {
 	weight float64
 }
 
+func (w *WeightedMember) GetMember() string {
+	return w.member
+}
+
 // Config represents a structure to control the rendezvous package.
 type Config struct {
 	Hasher Hasher
