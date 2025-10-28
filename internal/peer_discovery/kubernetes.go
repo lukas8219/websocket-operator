@@ -3,6 +3,7 @@ package peer_discovery
 import (
 	"fmt"
 	"log/slog"
+	"lukas8219/websocket-operator/internal/diff"
 	"os"
 	"path/filepath"
 
@@ -18,10 +19,10 @@ import (
 type KubernetesPeerDiscovery struct {
 	k8sClient            *kubernetes.Clientset
 	cacheStore           cache.Store
-	currentHosts         goset.Set[string]
+	currentHosts         *goset.Set[string]
 	targetK8sServiceName string
 	k8sNamespace         string
-	notificationChannel  chan []Peer
+	notificationChannel  chan diff.DifferenceOutput[Peer]
 	PeerDiscovery
 }
 
@@ -32,7 +33,7 @@ func NewKubernetes(namespace string, service string) *KubernetesPeerDiscovery {
 	}
 }
 
-func (k *KubernetesPeerDiscovery) NotificationChannel() chan []Peer {
+func (k *KubernetesPeerDiscovery) NotificationChannel() chan diff.DifferenceOutput[Peer] {
 	return k.notificationChannel
 }
 
@@ -63,7 +64,6 @@ func (k *KubernetesPeerDiscovery) Initialize() error {
 		ListerWatcher: watchList,
 		ObjectType:    &v1.Endpoints{},
 		Handler: cache.ResourceEventHandlerFuncs{
-			//TODO I think i can make it even more generic
 			AddFunc: func(obj interface{}) {
 				hosts := getAllAddressesFromEndpoint(obj.(*v1.Endpoints))
 				k.updateHostsArray(hosts, EMPTY_ARRAY)
@@ -101,15 +101,25 @@ func getAllAddressesFromEndpoint(endpoint *v1.Endpoints) []string {
 }
 
 func (k *KubernetesPeerDiscovery) updateHostsArray(NewHosts []string, ToRemoveHosts []string) {
+	difference := diff.Difference[string](k.currentHosts, NewHosts, ToRemoveHosts)
+	k.notificationChannel <- diff.DifferenceOutput[Peer]{
+		Added:   mapToPeers(difference.Added),
+		Removed: mapToPeers(difference.Removed),
+	}
 }
 
-func (k *KubernetesPeerDiscovery) GetCurrentHosts() ([]Peer, error) {
-	mappedHosts := make([]Peer, k.currentHosts.Size())
-	for address := range k.currentHosts.Items() {
+func mapToPeers(hosts []string) []Peer {
+	mappedHosts := make([]Peer, len(hosts))
+	for _, address := range hosts {
 		mappedHosts = append(mappedHosts, Peer{
 			hostname: address,
 			port:     "3000",
 		})
 	}
+	return mappedHosts
+}
+
+func (k *KubernetesPeerDiscovery) GetCurrentHosts() ([]Peer, error) {
+	mappedHosts := mapToPeers(k.currentHosts.Slice())
 	return mappedHosts, nil
 }

@@ -1,14 +1,13 @@
 package resolver
 
 import (
-	"fmt"
 	peerDiscovery "lukas8219/websocket-operator/internal/peer_discovery"
 	"lukas8219/websocket-operator/internal/rendezvous"
 )
 
 type Resolver struct {
-	peerDiscovery    peerDiscovery.PeerDiscovery
 	hashingAlgorithm *rendezvous.Rendezvous
+	peerDiscovery.PeerDiscovery
 }
 
 func New(
@@ -19,16 +18,17 @@ func New(
 }
 
 func (r *Resolver) Init() {
-	for event := range r.peerDiscovery.NotificationChannel() {
-		// TODO handle NEW and DELETE Events
-		fmt.Printf(string(len(event)))
+	for event := range r.NotificationChannel() {
+		r.hashingAlgorithm.Transaction(
+			event.Added,
+			event.Removed,
+		)
 	}
 }
 
 func (r *Resolver) Lookup(Recipient []byte) (peerDiscovery.Peer, error) {
-	_, error := r.peerDiscovery.CurrentHosts()
+	_, error := r.CurrentHosts()
 	if error != nil {
-		//we might need to return a pointer
 		return peerDiscovery.Peer{}, error
 	}
 	member := r.hashingAlgorithm.LocateKey(Recipient)
