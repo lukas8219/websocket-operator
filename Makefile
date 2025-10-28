@@ -1,18 +1,16 @@
-.PHONY: all build-sidecar build-controller gen-certs
+COMPONENTS := sidecar controller loadbalancer
 
-all: build-sidecar build-controller gen-certs
+.PHONY: all gen-certs test test-race
+.DEFAULT_GOAL := all
+all: $(addprefix build-,$(COMPONENTS))
 
-build-sidecar:
-	@echo "Building WebSocket Proxy Sidecar..."
-	./scripts/build-sidecar.sh
+build-%:
+	@echo "Building WebSocket $*"
+	COMPONENT="$*" ./scripts/build.sh
 
-build-controller:
-	@echo "Building WebSocket Operator Controller..."
-	./scripts/build-controller.sh
-	
-build-loadbalancer:
-	@echo "Building WebSocket Operator LoadBalancer..."
-	./scripts/build-loadbalancer.sh
+push-%:
+	@echo "Build and Push Image $*"
+	COMPONENT="$*" PUSH="true" ./scripts/build.sh
 
 gen-certs:
 	@echo "Generating TLS certificates..."
