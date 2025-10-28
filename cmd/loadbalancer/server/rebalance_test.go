@@ -5,8 +5,10 @@ import (
 	"context"
 	"io"
 	"log"
-	"log/slog"
 	"lukas8219/websocket-operator/cmd/loadbalancer/connection"
+	"lukas8219/websocket-operator/internal/consistent_hashing"
+	"lukas8219/websocket-operator/internal/peer_discovery"
+	"lukas8219/websocket-operator/internal/resolver"
 	"net"
 	"sync"
 	"testing"
@@ -14,22 +16,6 @@ import (
 
 	"github.com/gobwas/ws"
 )
-
-type MockRouter struct {
-	rebalanceChan chan [][2]string
-	*slog.Logger
-}
-
-func (m *MockRouter) RebalanceRequests() <-chan [][2]string {
-	return m.rebalanceChan
-}
-
-func (m *MockRouter) Route(string) string { return "" }
-func (m *MockRouter) Add([]string)        {}
-func (m *MockRouter) GetAllUpstreamHosts() []string {
-	return []string{}
-}
-func (m *MockRouter) InitializeHosts() error { return nil }
 
 type NetConnectionMock struct {
 	net.Conn
@@ -118,12 +104,14 @@ func NewMockConnection(user, upstreamHost string, downstreamConn net.Conn, wsDia
 }
 
 func TestHandleRebalanceLoop(t *testing.T) {
-	mockRouter := &MockRouter{
-		rebalanceChan: make(chan [][2]string, 1),
-	}
+	memoryDiscoveryBackend := peer_discovery.NewInMemoryPeerDiscovery()
+	mockResolver := resolver.New(
+		memoryDiscoveryBackend,
+		consistent_hashing.NewJumpHash(memoryDiscoveryBackend),
+	)
 	connections := make(map[string]*connection.Connection)
 
-	go handleRebalanceLoop(mockRouter, connections)
+	go handleRebalanceLoop(mockResolver, connections)
 
 	t.Run("Sucessfully rebalanced", func(t *testing.T) {
 		mockDownstreamConn := &NetConnectionMock{
@@ -139,7 +127,10 @@ func TestHandleRebalanceLoop(t *testing.T) {
 
 		mockConn.Tracker.UpstreamCancelChan() <- 1
 		time.Sleep(100 * time.Millisecond)
-		mockRouter.rebalanceChan <- [][2]string{{mockConn.Tracker.User(), "new-host:3000"}}
+		memoryDiscoveryBackend.AtomicOperation(
+			[]peer_discovery.Peer{peer_discovery.NewPeer("new-host", 3000)},
+			[]peer_discovery.Peer{peer_discovery.NewPeer("old-host", 3000)},
+		)
 		time.Sleep(100 * time.Millisecond)
 
 		if mockConn.UpstreamHost() != "new-host:3000" {

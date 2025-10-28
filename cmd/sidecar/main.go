@@ -70,7 +70,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	transport := transports.NewHTTPTransport(*resolver)
+	transport := transports.NewHTTPTransport(resolver)
 
 	slog.Info("Starting server", "port", *port)
 	// Map to store active WebSocket connections

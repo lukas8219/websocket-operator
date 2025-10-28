@@ -11,36 +11,50 @@ import (
 
 type ResolverVersion = int
 
-type Resolver struct {
+type Resolver interface {
+	peerDiscovery.PeerDiscovery
+	Init()
+	VersionUpgradeChannel() chan uint32
+	Lookup([]byte) (peerDiscovery.Peer, error)
+}
+
+type ResolverImpl struct {
 	consistentHashingAlgorithm consistent_hashing.ConsistentHashing[peerDiscovery.Peer]
 	peerDiscovery.PeerDiscovery
-	version atomic.Uint32
-	cache   *lru.Cache
+	version               atomic.Uint32
+	cache                 *lru.Cache
+	versionUpgradeChannel chan uint32
 }
 
 func New(
 	peerDiscovery peerDiscovery.PeerDiscovery,
 	consistentHashing consistent_hashing.ConsistentHashing[peerDiscovery.Peer],
-) *Resolver {
-	return &Resolver{
+) Resolver {
+	return &ResolverImpl{
 		consistentHashingAlgorithm: consistentHashing,
 		PeerDiscovery:              peerDiscovery,
 		cache:                      lru.New(1024),
 		version:                    atomic.Uint32{},
+		versionUpgradeChannel:      make(chan uint32),
 	}
 }
 
-func (r *Resolver) Init() {
+func (r *ResolverImpl) VersionUpgradeChannel() chan uint32 {
+	return r.versionUpgradeChannel
+}
+
+func (r *ResolverImpl) Init() {
 	for event := range r.NotificationChannel() {
 		r.consistentHashingAlgorithm.Transaction(
 			event.Added,
 			event.Removed,
 		)
-		r.version.Add(1)
+		new := r.version.Add(1)
+		r.versionUpgradeChannel <- new
 	}
 }
 
-func (r *Resolver) Lookup(Recipient []byte) (peerDiscovery.Peer, error) {
+func (r *ResolverImpl) Lookup(Recipient []byte) (peerDiscovery.Peer, error) {
 	_, error := r.CurrentHosts()
 	if error != nil {
 		return peerDiscovery.Peer{}, error
