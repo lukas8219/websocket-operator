@@ -109,6 +109,7 @@ func TestHandleRebalanceLoop(t *testing.T) {
 		memoryDiscoveryBackend,
 		consistent_hashing.NewJumpHash(memoryDiscoveryBackend),
 	)
+	go mockResolver.Init()
 	connections := make(map[string]*connection.Connection)
 
 	go handleRebalanceLoop(mockResolver, connections)
@@ -127,10 +128,12 @@ func TestHandleRebalanceLoop(t *testing.T) {
 
 		mockConn.Tracker.UpstreamCancelChan() <- 1
 		time.Sleep(100 * time.Millisecond)
+		t.Log("Before atomic")
 		memoryDiscoveryBackend.AtomicOperation(
 			[]peer_discovery.Peer{peer_discovery.NewPeer("new-host", 3000)},
 			[]peer_discovery.Peer{peer_discovery.NewPeer("old-host", 3000)},
 		)
+		t.Log("After atomic")
 		time.Sleep(100 * time.Millisecond)
 
 		if mockConn.UpstreamHost() != "new-host:3000" {

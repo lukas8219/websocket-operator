@@ -1,6 +1,6 @@
 .PHONY: all build-sidecar build-controller gen-certs
 
-all: build-sidecar build-controller gen-certs
+all: build-sidecar build-controller build-loadbalancer
 
 build-sidecar:
 	@echo "Building WebSocket Proxy Sidecar..."
@@ -9,7 +9,7 @@ build-sidecar:
 build-controller:
 	@echo "Building WebSocket Operator Controller..."
 	./scripts/build-controller.sh
-	
+
 build-loadbalancer:
 	@echo "Building WebSocket Operator LoadBalancer..."
 	./scripts/build-loadbalancer.sh

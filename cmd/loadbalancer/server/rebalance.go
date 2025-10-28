@@ -8,7 +8,7 @@ import (
 )
 
 func handleRebalanceLoop(resolver rslv.Resolver, connections map[string]*connection.Connection) {
-	slog.Debug("Starting rebalance loop")
+	slog.Info("Starting rebalance loop")
 	for _ = range resolver.VersionUpgradeChannel() {
 		hosts, err := resolver.CurrentHosts()
 		if err != nil {

@@ -1,6 +1,7 @@
 package consistent_hashing
 
 import (
+	"fmt"
 	"lukas8219/websocket-operator/internal/peer_discovery"
 
 	"github.com/lithammer/go-jump-consistent-hash"
@@ -28,7 +29,10 @@ func (j JumpHashing) Lookup(Recipient []byte) (peer_discovery.Peer, error) {
 		myUint64,
 		int32(len(currentHosts)),
 	)
-	return currentHosts[index-1], nil
+	if index == -1 {
+		return peer_discovery.Peer{}, fmt.Errorf("Didn't find any Peer to route")
+	}
+	return currentHosts[index], nil
 }
 
 func (j JumpHashing) Transaction(Add, Remove []peer_discovery.Peer) {

@@ -23,7 +23,7 @@ func (m InMemoryPeerDiscovery) Initialize() error {
 }
 
 func (m InMemoryPeerDiscovery) CurrentHosts() ([]Peer, error) {
-	return []Peer{}, nil
+	return m.availablePeers.Slice(), nil
 }
 
 func (m InMemoryPeerDiscovery) Mode() PeerDiscoveryMode {
@@ -31,7 +31,7 @@ func (m InMemoryPeerDiscovery) Mode() PeerDiscoveryMode {
 }
 
 func (m InMemoryPeerDiscovery) NotificationChannel() chan diff.DifferenceOutput[Peer] {
-	return nil
+	return m.channel
 }
 
 func (m InMemoryPeerDiscovery) AddPeer(peer Peer) {
