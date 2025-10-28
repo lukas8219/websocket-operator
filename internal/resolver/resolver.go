@@ -9,12 +9,12 @@ import (
 	"k8s.io/utils/lru"
 )
 
-type ResolverVersion = int
+type ResolverVersion = uint32
 
 type Resolver interface {
 	peerDiscovery.PeerDiscovery
 	Init()
-	VersionUpgradeChannel() chan uint32
+	VersionUpgradeChannel() chan ResolverVersion
 	Lookup([]byte) (peerDiscovery.Peer, error)
 }
 
@@ -23,7 +23,7 @@ type ResolverImpl struct {
 	peerDiscovery.PeerDiscovery
 	version               atomic.Uint32
 	cache                 *lru.Cache
-	versionUpgradeChannel chan uint32
+	versionUpgradeChannel chan ResolverVersion
 }
 
 func New(
@@ -35,11 +35,11 @@ func New(
 		PeerDiscovery:              peerDiscovery,
 		cache:                      lru.New(1024),
 		version:                    atomic.Uint32{},
-		versionUpgradeChannel:      make(chan uint32),
+		versionUpgradeChannel:      make(chan ResolverVersion),
 	}
 }
 
-func (r *ResolverImpl) VersionUpgradeChannel() chan uint32 {
+func (r *ResolverImpl) VersionUpgradeChannel() chan ResolverVersion {
 	return r.versionUpgradeChannel
 }
 
