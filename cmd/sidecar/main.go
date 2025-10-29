@@ -60,12 +60,9 @@ func main() {
 	flag.Parse()
 	logger.SetupLogger(*debug)
 	//TODO move to config
-	peerDiscovery := peer_discovery.NewKubernetes("default", "ws-headless-proxy")
+	peerDiscovery := peer_discovery.NewKubernetes("default", "ws-proxy-headless")
 	resolver := resolver.New(peerDiscovery, consistent_hashing.NewJumpHash(peerDiscovery))
-	err := resolver.Initialize()
-	if err != nil {
-		panic(err)
-	}
+	go resolver.Init()
 	transport := transports.NewHTTPTransport(resolver)
 
 	slog.Info("Starting server", "port", *port)
@@ -205,7 +202,7 @@ func handleIncomingMessagesToProxy(connections map[string]*ConnectionTracker, de
 		slog.Debug("Message recipient", "recipientId", recipientIdString, "recipientConnection", recipientConnection)
 		if recipientConnection == nil {
 			slog.Debug("No recipient found in-memory. Routing message to the correct target.", "recipientId", recipientIdString)
-			err := connectionTracker.Write(rawBytes, op, msg)
+			err := connectionTracker.Write([]byte(recipientIdString), op, msg)
 			if err != nil {
 				connectionTracker.Error("Failed to route message", "error", err)
 			}

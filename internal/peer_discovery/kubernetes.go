@@ -107,7 +107,7 @@ func getAllAddressesFromEndpoint(endpoint *v1.Endpoints) []string {
 }
 
 func (k *KubernetesPeerDiscovery) updateHostsArray(NewHosts []string, ToRemoveHosts []string) {
-	difference := diff.Difference[string](k.currentHosts, NewHosts, ToRemoveHosts)
+	difference := diff.Difference(k.currentHosts, NewHosts, ToRemoveHosts)
 	k.notificationChannel <- diff.DifferenceOutput[Peer]{
 		Added:   mapToPeers(difference.Added),
 		Removed: mapToPeers(difference.Removed),
@@ -127,7 +127,6 @@ func mapToPeers(hosts []string) []Peer {
 
 func (k *KubernetesPeerDiscovery) CurrentHosts() ([]Peer, error) {
 	mappedHosts := mapToPeers(k.currentHosts.Slice())
-	print(mappedHosts)
 	return mappedHosts, nil
 }
 
