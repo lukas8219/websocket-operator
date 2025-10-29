@@ -1,95 +1,103 @@
 // Note: For Node.js environments, you'll need to install ws: npm install ws
 // Browser environments can use the native WebSocket API directly
-const WebSocket = require('ws');
-const yargs = require('yargs');
-const { hideBin } = require('yargs/helpers');
-const readline = require('readline');
+import WebSocket from "ws";
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
+import readline from "readline";
+import { promisify } from "util";
 
 // Create readline interface for reading from stdin
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
-  prompt: '> '
+  prompt: "> ",
 });
 
 // Function to handle sending messages from stdin
 function setupStdinMessageHandler(socket, recipientId, user) {
-  rl.on('line', (line) => {
+  rl.on("line", (line) => {
     if (line.trim()) {
       const message = JSON.stringify({
         message: line,
         recipientId: String(recipientId),
-        from: String(user)
+        from: String(user),
       });
-      
+
       console.log(`Sending: ${message}`);
       socket.send(message);
     }
     rl.prompt();
   });
-  
-  rl.on('close', () => {
-    console.log('Stdin closed. Disconnecting...');
+
+  rl.on("close", () => {
+    console.log("Stdin closed. Disconnecting...");
     socket.close();
     process.exit(0);
   });
 }
 
-
 const argv = yargs(hideBin(process.argv)).argv;
 
-const targetPort = argv.port || 3000;
-const user = argv.user || "1";
-const recipientId = argv.recipientId || "recipient";
+const question = promisify(rl.question).bind(rl);
+const targetPort = argv.port || 8080; //LB port
+const user = await question("User Id: ");
+const recipientId = await question("Room Id: ");
 const duration = argv.duration || 30000;
-const autoPublish = argv.autoPublish
+const autoPublish = argv.autoPublish;
+const hostname = process.env.K8S
+  ? `websocket-operator-loadbalancer.default.svc.cluster.local:${targetPort}`
+  : `localhost:${targetPort}`;
 
 // Server URL to connect to - change this to your WebSocket server address
 // Note: WebSockets use ws:// or wss:// protocol instead of http:// or https://
-const SERVER_URL = `ws://localhost:${targetPort}`;
+const SERVER_URL = `ws://${hostname}`;
 
 console.log("Connecting to WebSocket server...");
 
 // Create a WebSocket connection
 const socket = new WebSocket(SERVER_URL, { headers: { "ws-user-id": user } });
 
-socket.on('upgrade', function(request, socket, head) {
+socket.on("upgrade", function (request, socket, head) {
   console.log(request.headers);
-})
+});
 
 // When successfully connected
-socket.on('open', function(){
+socket.on("open", function () {
   console.log("Connected to WebSocket server");
-  
+
   if (autoPublish === "1") {
     const hiInterval = setInterval(() => {
-      const message = JSON.stringify({ message: "HI", recipientId: String(recipientId), from: String(user) });
-      socket.send(message);  
+      const message = JSON.stringify({
+        message: "HI",
+        recipientId: String(recipientId),
+        from: String(user),
+      });
+      socket.send(message);
     }, 3000);
-  
+
     setTimeout(() => {
       clearInterval(hiInterval);
       console.log("Disconnecting...");
       socket.close();
-    }, Number(duration))
+    }, Number(duration));
   }
-})
+});
 
 setupStdinMessageHandler(socket, recipientId, user);
 
 // Handle errors
-socket.on('error', (error) => {
+socket.on("error", (error) => {
   console.error("WebSocket error:", error);
   socket.close();
 });
 
 // When disconnected
-socket.on('close', (code, reason) => {
-  console.log(`Disconnected: Code ${code}${reason ? ', ' + reason : ''}`);
+socket.on("close", (code, reason) => {
+  console.log(`Disconnected: Code ${code}${reason ? ", " + reason : ""}`);
   process.exit(0);
 });
 
 // Optional: Handle incoming messages
-socket.on('message', (data) => {
+socket.on("message", (data) => {
   console.log("Received:", data.toString());
-}); 
+});

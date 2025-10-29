@@ -61,12 +61,8 @@ func main() {
 	logger.SetupLogger(*debug)
 	//TODO move to config
 	peerDiscovery := peer_discovery.NewKubernetes("default", "ws-headless-proxy")
-	err := peerDiscovery.Initialize()
-	if err != nil {
-		panic(err) //TODO Better handling
-	}
 	resolver := resolver.New(peerDiscovery, consistent_hashing.NewJumpHash(peerDiscovery))
-	err = resolver.Initialize()
+	err := resolver.Initialize()
 	if err != nil {
 		panic(err)
 	}
@@ -76,7 +72,7 @@ func main() {
 	// Map to store active WebSocket connections
 	// Key: user ID, Value: ConnectionTracker
 	connections := make(map[string]*ConnectionTracker)
-	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	err = http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("Request received", "method", r.Method, "path", r.URL.Path)
 		if r.Method == http.MethodPost && r.URL.Path == "/message" {
 			if connections[r.Header.Get("ws-user-id")] == nil {
@@ -116,15 +112,20 @@ func main() {
 		}
 		slog := slog.With("recipientId", user)
 		w.Header().Set("x-ws-operator-instance", os.Getenv("HOSTNAME"))
-		slog.Info("New connection")
+		slog.Debug("Dialing proxied connection")
+		proxiedConn, _, _, err := ws.Dial(context.Background(), "ws://localhost:"+*targetPort)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			slog.Error("Failed to establish upstream connection", "error", err)
+			return
+		}
+		slog.Debug("Connection established")
 		slog.Debug("Upgrading HTTP connection")
 		clientConn, _, _, err := ws.UpgradeHTTP(r, w)
 		if err != nil {
 			slog.Error("Failed to upgrade HTTP connection", "error", err)
 			return
 		}
-		slog.Debug("Dialing proxied connection")
-		proxiedConn, _, _, err := ws.Dial(context.Background(), "ws://localhost:"+*targetPort)
 		connectionTracker := &ConnectionTracker{
 			user:           user,
 			upstreamHost:   "localhost:" + *targetPort,
@@ -134,11 +135,6 @@ func main() {
 			Transport:      &transport,
 		}
 		connections[user] = connectionTracker
-		if err != nil {
-			connectionTracker.Error("Failed to dial proxied connection", "error", err)
-			clientConn.Close()
-			return
-		}
 		//TODO no good here
 		closeConnections := func() {
 			connections[user] = nil
@@ -149,6 +145,9 @@ func main() {
 		go proxySidecarServerToClient(closeConnections, connectionTracker)
 		go handleIncomingMessagesToProxy(connections, closeConnections, connectionTracker)
 	}))
+	if err != nil {
+		panic(err)
+	}
 }
 
 func proxySidecarServerToClient(deferClose func(), connectionTracker *ConnectionTracker) {

@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"fmt"
+	"log/slog"
 	"lukas8219/websocket-operator/internal/consistent_hashing"
 	peerDiscovery "lukas8219/websocket-operator/internal/peer_discovery"
 	"sync/atomic"
@@ -44,6 +45,7 @@ func (r *ResolverImpl) VersionUpgradeChannel() chan ResolverVersion {
 }
 
 func (r *ResolverImpl) Init() {
+	go r.PeerDiscovery.Initialize()
 	for event := range r.NotificationChannel() {
 		r.consistentHashingAlgorithm.Transaction(
 			event.Added,
@@ -57,6 +59,7 @@ func (r *ResolverImpl) Init() {
 func (r *ResolverImpl) Lookup(Recipient []byte) (peerDiscovery.Peer, error) {
 	_, error := r.CurrentHosts()
 	if error != nil {
+		slog.Error("failed to lookup", "error", error)
 		return peerDiscovery.Peer{}, error
 	}
 	// TODO: investigate how to implemeny :relaxed memory access to prevent mem ordering here

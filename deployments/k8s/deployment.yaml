@@ -17,47 +17,47 @@ spec:
     spec:
       serviceAccountName: websocket-operator-controller
       containers:
-      - name: controller
-        image: docker.io/lukas8219/websocket-operator-controller:latest  # Update with your image tag
-        imagePullPolicy: Always
-        args:
-        - --cert-dir=/etc/webhook/certs
-        ports:
-        - containerPort: 8080
-        resources:
-          limits:
-            cpu: 200m
-            memory: 100Mi
-          requests:
-            cpu: 100m
-            memory: 50Mi
-        volumeMounts:
-        - name: tls-certs
-          mountPath: /etc/webhook/certs/server.crt
-          readOnly: true
-          subPath: tls.crt
-        - name: tls-certs
-          mountPath: /etc/webhook/certs/server.key
-          readOnly: true
-          subPath: tls.key
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-            scheme: HTTPS
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-            scheme: HTTPS
-          initialDelaySeconds: 5
-          periodSeconds: 10
+        - name: controller
+          image: docker.io/lukas8219/websocket-operator-controller:latest # Update with your image tag
+          imagePullPolicy: Always
+          args:
+            - --cert-dir=/etc/webhook/certs
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              cpu: 200m
+              memory: 100Mi
+            requests:
+              cpu: 100m
+              memory: 50Mi
+          volumeMounts:
+            - name: tls-certs
+              mountPath: /etc/webhook/certs/server.crt
+              readOnly: true
+              subPath: tls.crt
+            - name: tls-certs
+              mountPath: /etc/webhook/certs/server.key
+              readOnly: true
+              subPath: tls.key
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
       volumes:
-      - name: tls-certs
-        secret:
-          secretName: webhook-tls
+        - name: tls-certs
+          secret:
+            secretName: webhook-tls
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -77,21 +77,21 @@ spec:
     spec:
       serviceAccountName: loadbalancer-sa
       containers:
-      - name: loadbalancer
-        envFrom:
-          - configMapRef:
-              name: websocket-operator-config
-        image: docker.io/lukas8219/websocket-operator-loadbalancer:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 3000
-        resources:
-          limits:
-            cpu: 200m
-            memory: 100Mi
-          requests:
-            cpu: 100m
-            memory: 50Mi
+        - name: loadbalancer
+          envFrom:
+            - configMapRef:
+                name: websocket-operator-config
+          image: docker.io/lukas8219/websocket-operator-loadbalancer:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          resources:
+            limits:
+              cpu: 200m
+              memory: 100Mi
+            requests:
+              cpu: 100m
+              memory: 50Mi
 ---
 apiVersion: v1
 kind: Service
@@ -103,10 +103,10 @@ spec:
   selector:
     app: websocket-operator-loadbalancer
   ports:
-  - port: 3000
-    targetPort: 3000
-    protocol: TCP
-    name: http
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
   type: ClusterIP
 ---
 apiVersion: v1
@@ -119,9 +119,9 @@ kind: ClusterRole
 metadata:
   name: endpoints-reader
 rules:
-- apiGroups: [""]
-  resources: ["endpoints"]
-  verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -132,7 +132,6 @@ roleRef:
   kind: ClusterRole
   name: endpoints-reader
 subjects:
-- kind: ServiceAccount
-  name: loadbalancer-sa
-  namespace: default
-
+  - kind: ServiceAccount
+    name: loadbalancer-sa
+    namespace: default

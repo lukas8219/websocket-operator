@@ -23,14 +23,15 @@ type KubernetesPeerDiscovery struct {
 	targetK8sServiceName string
 	k8sNamespace         string
 	notificationChannel  chan diff.DifferenceOutput[Peer]
-	PeerDiscovery
 }
 
-func NewKubernetes(namespace string, service string) *KubernetesPeerDiscovery {
+func NewKubernetes(namespace string, service string) PeerDiscovery {
 	return &KubernetesPeerDiscovery{
 		k8sNamespace:         namespace,
 		targetK8sServiceName: service,
 		k8sClient:            createClient(),
+		currentHosts:         goset.New[string](100),
+		notificationChannel:  make(chan diff.DifferenceOutput[Peer], 256),
 	}
 }
 
@@ -50,11 +51,11 @@ const (
 func createClient() *kubernetes.Clientset {
 	config, err := rest.InClusterConfig()
 	if err != nil {
+		slog.Warn("Failed to get InClusterConfig, looking for KubeConfig", "error", err)
 		kubeconfig := filepath.Join(
 			os.Getenv("HOME"), ".kube", "config",
 		)
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-		slog.Info("Failed to get in-cluster config, using empty config")
 	}
 
 	return kubernetes.NewForConfigOrDie(config)
@@ -94,7 +95,7 @@ func (k *KubernetesPeerDiscovery) Initialize() error {
 }
 
 func getAllAddressesFromEndpoint(endpoint *v1.Endpoints) []string {
-	hosts := make([]string, 256)
+	hosts := make([]string, 0)
 	for _, address := range endpoint.Subsets {
 		for _, address := range address.Addresses {
 			if address.IP != "" {
@@ -114,7 +115,7 @@ func (k *KubernetesPeerDiscovery) updateHostsArray(NewHosts []string, ToRemoveHo
 }
 
 func mapToPeers(hosts []string) []Peer {
-	mappedHosts := make([]Peer, len(hosts))
+	mappedHosts := make([]Peer, 0)
 	for _, address := range hosts {
 		mappedHosts = append(mappedHosts, Peer{
 			hostname: address,
@@ -124,8 +125,9 @@ func mapToPeers(hosts []string) []Peer {
 	return mappedHosts
 }
 
-func (k *KubernetesPeerDiscovery) GetCurrentHosts() ([]Peer, error) {
+func (k *KubernetesPeerDiscovery) CurrentHosts() ([]Peer, error) {
 	mappedHosts := mapToPeers(k.currentHosts.Slice())
+	print(mappedHosts)
 	return mappedHosts, nil
 }
 

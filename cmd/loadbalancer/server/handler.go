@@ -10,9 +10,9 @@ import (
 	"github.com/gobwas/ws"
 )
 
-func createHandler(rslv resolver.Resolver, connections map[string]*connection.Connection) http.HandlerFunc {
+func createHandler(rslv *resolver.Resolver, connections map[string]*connection.Connection) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		handleConnection(rslv, connections, w, r)
+		handleConnection(*rslv, connections, w, r)
 	}
 }
 

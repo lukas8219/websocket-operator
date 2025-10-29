@@ -14,8 +14,8 @@ func (p Peer) Hostname() string {
 	return p.hostname
 }
 
-func (p *Peer) String() string {
-	return p.hostname
+func (p Peer) String() string {
+	return p.SocketAddres()
 }
 
 func (p Peer) Port() uint16 {
