@@ -69,7 +69,7 @@ func main() {
 	// Map to store active WebSocket connections
 	// Key: user ID, Value: ConnectionTracker
 	connections := make(map[string]*ConnectionTracker)
-	err = http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("Request received", "method", r.Method, "path", r.URL.Path)
 		if r.Method == http.MethodPost && r.URL.Path == "/message" {
 			if connections[r.Header.Get("ws-user-id")] == nil {
@@ -142,9 +142,6 @@ func main() {
 		go proxySidecarServerToClient(closeConnections, connectionTracker)
 		go handleIncomingMessagesToProxy(connections, closeConnections, connectionTracker)
 	}))
-	if err != nil {
-		panic(err)
-	}
 }
 
 func proxySidecarServerToClient(deferClose func(), connectionTracker *ConnectionTracker) {

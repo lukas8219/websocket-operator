@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"log/slog"
 	"lukas8219/websocket-operator/cmd/loadbalancer/connection"
 	"lukas8219/websocket-operator/internal/resolver"
@@ -18,5 +19,12 @@ func StartServer(config ServerConfig) {
 
 	go handleRebalanceLoop(*config.Resolver, connections)
 	//TODO how to properly test this - aka not having a server running at all
-	http.ListenAndServe("0.0.0.0:"+config.Port, createHandler(config.Resolver, connections))
+	go http.ListenAndServe("0.0.0.0:"+config.Port, createHandler(config.Resolver, connections))
+
+	http.ListenAndServe("0.0.0.0:8081", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hosts, _ := (*config.Resolver).CurrentHosts()
+		content, _ := json.Marshal(hosts)
+		w.WriteHeader(200)
+		w.Write(content)
+	}))
 }

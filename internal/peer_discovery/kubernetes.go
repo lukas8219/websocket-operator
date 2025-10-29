@@ -74,9 +74,11 @@ func (k *KubernetesPeerDiscovery) Initialize() error {
 				hosts := getAllAddressesFromEndpoint(obj.(*v1.Endpoints))
 				k.updateHostsArray(hosts, EMPTY_ARRAY)
 			},
+			//TODO when scaling up to 20 replicas, the current state was a single entry in CURRENT_HOSTS
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				hosts := getAllAddressesFromEndpoint(newObj.(*v1.Endpoints))
-				k.updateHostsArray(hosts, EMPTY_ARRAY)
+				oldHosts := getAllAddressesFromEndpoint(oldObj.(*v1.Endpoints))
+				k.updateHostsArray(hosts, oldHosts)
 			},
 			DeleteFunc: func(obj interface{}) {
 				hosts := getAllAddressesFromEndpoint(obj.(*v1.Endpoints))
@@ -108,6 +110,9 @@ func getAllAddressesFromEndpoint(endpoint *v1.Endpoints) []string {
 
 func (k *KubernetesPeerDiscovery) updateHostsArray(NewHosts []string, ToRemoveHosts []string) {
 	difference := diff.Difference(k.currentHosts, NewHosts, ToRemoveHosts)
+	if k.currentHosts.Size() == 0 {
+		return
+	}
 	k.notificationChannel <- diff.DifferenceOutput[Peer]{
 		Added:   mapToPeers(difference.Added),
 		Removed: mapToPeers(difference.Removed),

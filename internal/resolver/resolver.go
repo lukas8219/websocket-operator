@@ -94,9 +94,9 @@ func (r *ResolverImpl) Lookup(Recipient []byte) (peerDiscovery.Peer, error) {
 	}
 	// TODO: investigate how to implemeny :relaxed memory access to prevent mem ordering here
 	version := r.version.Load()
-	cachedEntry, found := r.cache.Get(createCacheKey(version, Recipient))
+	_, found := r.cache.Get(createCacheKey(version, Recipient))
 	if found {
-		return cachedEntry.(peerDiscovery.Peer), nil
+		// return cachedEntry.(peerDiscovery.Peer), nil
 	}
 	//Who reaaally needs to be versioned might be the consistent hashing output
 	peer, err := r.consistentHashingAlgorithm.Lookup(Recipient)
