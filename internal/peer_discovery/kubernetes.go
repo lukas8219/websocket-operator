@@ -4,17 +4,19 @@ import (
 	"fmt"
 	"log/slog"
 	"lukas8219/websocket-operator/internal/diff"
-	"os"
-	"path/filepath"
 
 	goset "github.com/hashicorp/go-set/v3"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-	clientcmd "k8s.io/client-go/tools/clientcmd"
 )
+
+type KubernetesPeerDiscoveryOptions struct {
+	Clientset *kubernetes.Clientset
+	Namespace string
+	Service   string
+}
 
 type KubernetesPeerDiscovery struct {
 	k8sClient            *kubernetes.Clientset
@@ -25,11 +27,11 @@ type KubernetesPeerDiscovery struct {
 	notificationChannel  chan diff.DifferenceOutput[Peer]
 }
 
-func NewKubernetes(namespace string, service string) PeerDiscovery {
+func NewKubernetes(options KubernetesPeerDiscoveryOptions) PeerDiscovery {
 	return &KubernetesPeerDiscovery{
-		k8sNamespace:         namespace,
-		targetK8sServiceName: service,
-		k8sClient:            createClient(),
+		k8sNamespace:         options.Namespace,
+		targetK8sServiceName: options.Service,
+		k8sClient:            options.Clientset,
 		currentHosts:         goset.New[string](100),
 		notificationChannel:  make(chan diff.DifferenceOutput[Peer], 256),
 	}
@@ -46,20 +48,6 @@ var (
 const (
 	MAX_KUBERNETES_ENDPOINT_SLICE_SIZE = 1000
 )
-
-// Remove OR MOVE
-func createClient() *kubernetes.Clientset {
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		slog.Warn("Failed to get InClusterConfig, looking for KubeConfig", "error", err)
-		kubeconfig := filepath.Join(
-			os.Getenv("HOME"), ".kube", "config",
-		)
-		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-	}
-
-	return kubernetes.NewForConfigOrDie(config)
-}
 
 func (k *KubernetesPeerDiscovery) Initialize() error {
 	watchList := cache.NewListWatchFromClient(k.k8sClient.CoreV1().RESTClient(), "endpoints", k.k8sNamespace,

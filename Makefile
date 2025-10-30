@@ -29,6 +29,9 @@ test:
 	@echo "Running tests..."
 	go test -v ./...
 
+integration:
+	go test -v ./integration_tests/...
+
 test-race:
 	@echo "Running tests with race detector..."
 	go test -race -v ./...
