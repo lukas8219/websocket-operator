@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"lukas8219/websocket-operator/internal/diff"
+	"lukas8219/websocket-operator/internal/utils"
 
 	goset "github.com/hashicorp/go-set/v3"
 	v1 "k8s.io/api/core/v1"
@@ -59,17 +60,17 @@ func (k *KubernetesPeerDiscovery) Initialize() error {
 		ObjectType:    &v1.Endpoints{},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				hosts := getAllAddressesFromEndpoint(obj.(*v1.Endpoints))
+				hosts := utils.GetAllAddressesFromEndpoint(obj.(*v1.Endpoints))
 				k.updateHostsArray(hosts, EMPTY_ARRAY)
 			},
 			//TODO when scaling up to 20 replicas, the current state was a single entry in CURRENT_HOSTS
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				hosts := getAllAddressesFromEndpoint(newObj.(*v1.Endpoints))
-				oldHosts := getAllAddressesFromEndpoint(oldObj.(*v1.Endpoints))
+				hosts := utils.GetAllAddressesFromEndpoint(newObj.(*v1.Endpoints))
+				oldHosts := utils.GetAllAddressesFromEndpoint(oldObj.(*v1.Endpoints))
 				k.updateHostsArray(hosts, oldHosts)
 			},
 			DeleteFunc: func(obj interface{}) {
-				hosts := getAllAddressesFromEndpoint(obj.(*v1.Endpoints))
+				hosts := utils.GetAllAddressesFromEndpoint(obj.(*v1.Endpoints))
 				k.updateHostsArray(EMPTY_ARRAY, hosts)
 			},
 		},
@@ -84,26 +85,17 @@ func (k *KubernetesPeerDiscovery) Initialize() error {
 	return nil
 }
 
-func getAllAddressesFromEndpoint(endpoint *v1.Endpoints) []string {
-	hosts := make([]string, 0)
-	for _, address := range endpoint.Subsets {
-		for _, address := range address.Addresses {
-			if address.IP != "" {
-				hosts = append(hosts, address.IP)
-			}
-		}
-	}
-	return hosts
-}
-
 func (k *KubernetesPeerDiscovery) updateHostsArray(NewHosts []string, ToRemoveHosts []string) {
+	beforeState := k.currentHosts.Copy().Slice()
 	difference := diff.Difference(k.currentHosts, NewHosts, ToRemoveHosts)
 	if k.currentHosts.Size() == 0 {
 		return
 	}
+	added, removed := mapToPeers(difference.Added), mapToPeers(difference.Removed)
+	slog.With("added", added, "removed", removed, "new", NewHosts, "toDelete", ToRemoveHosts, "before", mapToPeers(beforeState)).Info("New Host State Diff")
 	k.notificationChannel <- diff.DifferenceOutput[Peer]{
-		Added:   mapToPeers(difference.Added),
-		Removed: mapToPeers(difference.Removed),
+		Added:   added,
+		Removed: removed,
 	}
 }
 

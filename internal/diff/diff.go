@@ -11,8 +11,8 @@ type DifferenceOutput[T comparable] struct {
 // before[1,2,3] - [3] -> currentState[1,2,4] = currentState|before [3]
 func Difference[T comparable](currentState *set.Set[T], NewEntries []T, ToRemoveEntries []T) DifferenceOutput[T] {
 	beforeUpdate := currentState.Copy()
-	currentState.InsertSlice(NewEntries)
 	currentState.RemoveSlice(ToRemoveEntries)
+	currentState.InsertSlice(NewEntries)
 	added := currentState.Difference(beforeUpdate)
 	removed := beforeUpdate.Difference(currentState)
 	return DifferenceOutput[T]{

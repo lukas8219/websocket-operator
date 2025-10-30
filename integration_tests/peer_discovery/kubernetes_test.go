@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 	"lukas8219/websocket-operator/internal/peer_discovery"
+	"lukas8219/websocket-operator/internal/utils"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/hashicorp/go-set/v3"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -146,41 +148,84 @@ func TestShouldHaveCorrectNumberOfHostsAfterReconcile(t *testing.T) {
 		Service:   headlessServiceName,
 	})
 	go k8sPeer.Initialize()
+	var firstCall int32 = 5
+	var secondCall int32 = 8
+	var thirdCall int32 = 4
+	var fourthCall int32 = 10
 
-	time.Sleep(5 * time.Second)
-	currentScale, error := client.AppsV1().Deployments(ns.Name).GetScale(
-		ctx,
-		deployment.Name,
-		metav1.GetOptions{},
-	)
-	must(error)
-
-	var newReplicas int32 = 20
-	currentScale.Spec.Replicas = newReplicas
-
-	_, err = client.AppsV1().Deployments(ns.Name).UpdateScale(
-		ctx,
-		deployment.Name,
-		currentScale,
-		metav1.UpdateOptions{},
-	)
-	if err != nil {
-		panic(err)
+	scale := func(replicas int32) {
+		time.Sleep(3 * time.Second)
+		scaleDeployment(
+			ctx,
+			client,
+			ns.Name,
+			deployment.Name,
+			replicas,
+		)
 	}
+
+	scale(firstCall)
+	scale(secondCall)
+	scale(thirdCall)
+	scale(fourthCall)
 
 	error = waitBeforeAllPodsReady(ctx, client, ns.Name, deployment.Name, 30)
 	must(error)
 
-	time.Sleep(20 * time.Second)
+	time.Sleep(5 * time.Second)
 	peers, error := k8sPeer.CurrentHosts()
 	must(error)
 
-	if len(peers) != 20 {
+	if len(peers) != int(fourthCall) {
 		t.Fatalf("Peers has wrong number of hosts %s", peers)
+	}
+
+	if !hasPeersInEndpoint(
+		ctx,
+		client,
+		ns.Name,
+		headlessService.Name,
+		peers,
+	) {
+		t.Fatal("Some peers are missing")
 	}
 }
 
 func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func hasPeersInEndpoint(ctx context.Context, client *kubernetes.Clientset, ns string, service string, peers []peer_discovery.Peer) bool {
+	endpoint, err := client.CoreV1().Endpoints(ns).Get(ctx, service, metav1.GetOptions{})
+	if err != nil {
+		slog.With("error", err).Error("Failed to fetch the Endpoint")
+		return false
+	}
+	ips := set.From(utils.GetAllAddressesFromEndpoint(endpoint))
+	peerIps := set.New[string](len(peers))
+	for _, v := range peers {
+		peerIps.Insert(v.Hostname())
+	}
+	return ips.EqualSet(peerIps)
+}
+
+func scaleDeployment(ctx context.Context, client *kubernetes.Clientset, ns string, deployment string, replicas int32) {
+	currentScale, error := client.AppsV1().Deployments(ns).GetScale(
+		ctx,
+		deployment,
+		metav1.GetOptions{},
+	)
+	must(error)
+	currentScale.Spec.Replicas = replicas
+
+	_, err := client.AppsV1().Deployments(ns).UpdateScale(
+		ctx,
+		deployment,
+		currentScale,
+		metav1.UpdateOptions{},
+	)
 	if err != nil {
 		panic(err)
 	}
