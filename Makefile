@@ -9,10 +9,12 @@ build-%:
 	@echo "Building WebSocket $*"
 	COMPONENT="$*" ./scripts/build.sh
 
-push-all: $(addprefix push-,$(COMPONENTS))
 push-%:
 	@echo "Build and Push Image $*"
 	COMPONENT="$*" PUSH="true" ./scripts/build.sh
+
+push: $(addprefix push-,$(COMPONENTS))
+build: $(addprefix build-,$(COMPONENTS))
 
 run-%:
 	go run "./cmd/$*/"
