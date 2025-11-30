@@ -14,7 +14,7 @@ type InMemoryPeerDiscovery struct {
 func NewInMemoryPeerDiscovery() InMemoryPeerDiscovery {
 	return InMemoryPeerDiscovery{
 		availablePeers: set.New[Peer](1),
-		channel:        make(chan diff.DifferenceOutput[Peer], 0),
+		channel:        make(chan diff.DifferenceOutput[Peer]),
 	}
 }
 

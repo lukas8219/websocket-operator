@@ -10,17 +10,19 @@ import (
 )
 
 func main() {
-	port := flag.String("port", "3000", "Port to listen on")
+	port := flag.String("port", "8080", "Port to listen on")
 	// mode := flag.String("mode", "kubernetes", "Mode to use")
-	debug := flag.Bool("debug", false, "Debug mode")
+	debug := flag.Bool("debug", true, "Debug mode")
 	flag.Parse()
 	logger.SetupLogger(*debug)
-	peerDiscovery := peer_discovery.NewKubernetes("default", "ws-headless-proxy")
-	go peerDiscovery.Initialize()
-	resolver := resolver.New(peerDiscovery, consistent_hashing.NewJumpHash(peerDiscovery))
-	go resolver.Initialize()
+	peerDiscovery := peer_discovery.NewKubernetes("default", "ws-proxy-headless")
+	resolver := resolver.New(
+		peerDiscovery,
+		consistent_hashing.NewJumpHash(peerDiscovery),
+	)
+	go resolver.Init()
 	server.StartServer(server.ServerConfig{
-		Resolver: resolver,
+		Resolver: &resolver,
 		Port:     *port,
 	})
 }

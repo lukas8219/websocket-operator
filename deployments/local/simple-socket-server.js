@@ -1,55 +1,57 @@
 // Import the WebSocket server library
-const WebSocket = require('ws');
+import { WebSocketServer } from "ws";
 
-const [,,port=3001] = process.argv;
+const [, , port = 3001] = process.argv;
 
 // Port to listen on
 const PORT = Number(port);
 
 // Create a WebSocket server
-const server = new WebSocket.Server({ port: PORT });
+const server = new WebSocketServer({ port: PORT });
 
 console.log(`WebSocket server started and listening on port ${PORT}`);
 
 // Handle new connections
-server.on('connection', (socket, req) => {
+server.on("connection", (socket, req) => {
   const clientAddress = req.socket.remoteAddress;
   console.log(`New client connected from ${clientAddress}`);
-  
+
   // Send a welcome message to the client
-  socket.send('Welcome to the WebSocket server!');
-  
+  socket.send("Welcome to the WebSocket server!");
+
   // Handle messages from clients
-  socket.on('message', (message) => {
+  socket.on("message", (message) => {
     const messageStr = message.toString();
     console.log(`Received message: ${messageStr}`);
-    
+
     // Echo the message back with a prefix
     console.log(`Sending message back to client ${messageStr}`);
     socket.send(`Server received: ${messageStr}`);
   });
-  
+
   // Handle client disconnection
-  socket.on('close', (code, reason) => {
-    console.log(`Client disconnected. Code: ${code}${reason ? ', Reason: ' + reason : ''}`);
+  socket.on("close", (code, reason) => {
+    console.log(
+      `Client disconnected. Code: ${code}${reason ? ", Reason: " + reason : ""}`,
+    );
   });
-  
+
   // Handle errors
-  socket.on('error', (error) => {
-    console.error('Socket error:', error);
+  socket.on("error", (error) => {
+    console.error("Socket error:", error);
   });
 });
 
 // Handle server errors
-server.on('error', (error) => {
-  console.error('Server error:', error);
+server.on("error", (error) => {
+  console.error("Server error:", error);
 });
 
 // Clean up on process termination
-process.on('SIGINT', () => {
-  console.log('Shutting down server...');
+process.on("SIGINT", () => {
+  console.log("Shutting down server...");
   server.close(() => {
-    console.log('Server closed');
+    console.log("Server closed");
     process.exit(0);
   });
-}); 
+});

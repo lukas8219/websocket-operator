@@ -4,17 +4,20 @@ import (
 	"fmt"
 	"log/slog"
 	"lukas8219/websocket-operator/internal/diff"
-	"os"
-	"path/filepath"
+	"lukas8219/websocket-operator/internal/utils"
 
 	goset "github.com/hashicorp/go-set/v3"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-	clientcmd "k8s.io/client-go/tools/clientcmd"
 )
+
+type KubernetesPeerDiscoveryOptions struct {
+	Clientset *kubernetes.Clientset
+	Namespace string
+	Service   string
+}
 
 type KubernetesPeerDiscovery struct {
 	k8sClient            *kubernetes.Clientset
@@ -23,14 +26,15 @@ type KubernetesPeerDiscovery struct {
 	targetK8sServiceName string
 	k8sNamespace         string
 	notificationChannel  chan diff.DifferenceOutput[Peer]
-	PeerDiscovery
 }
 
-func NewKubernetes(namespace string, service string) *KubernetesPeerDiscovery {
+func NewKubernetes(options KubernetesPeerDiscoveryOptions) PeerDiscovery {
 	return &KubernetesPeerDiscovery{
-		k8sNamespace:         namespace,
-		targetK8sServiceName: service,
-		k8sClient:            createClient(),
+		k8sNamespace:         options.Namespace,
+		targetK8sServiceName: options.Service,
+		k8sClient:            options.Clientset,
+		currentHosts:         goset.New[string](100),
+		notificationChannel:  make(chan diff.DifferenceOutput[Peer], 256),
 	}
 }
 
@@ -46,20 +50,6 @@ const (
 	MAX_KUBERNETES_ENDPOINT_SLICE_SIZE = 1000
 )
 
-// Remove OR MOVE
-func createClient() *kubernetes.Clientset {
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		kubeconfig := filepath.Join(
-			os.Getenv("HOME"), ".kube", "config",
-		)
-		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-		slog.Info("Failed to get in-cluster config, using empty config")
-	}
-
-	return kubernetes.NewForConfigOrDie(config)
-}
-
 func (k *KubernetesPeerDiscovery) Initialize() error {
 	watchList := cache.NewListWatchFromClient(k.k8sClient.CoreV1().RESTClient(), "endpoints", k.k8sNamespace,
 		fields.OneTermEqualSelector("metadata.name", k.targetK8sServiceName),
@@ -70,15 +60,17 @@ func (k *KubernetesPeerDiscovery) Initialize() error {
 		ObjectType:    &v1.Endpoints{},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				hosts := getAllAddressesFromEndpoint(obj.(*v1.Endpoints))
+				hosts := utils.GetAllAddressesFromEndpoint(obj.(*v1.Endpoints))
 				k.updateHostsArray(hosts, EMPTY_ARRAY)
 			},
+			//TODO when scaling up to 20 replicas, the current state was a single entry in CURRENT_HOSTS
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				hosts := getAllAddressesFromEndpoint(newObj.(*v1.Endpoints))
-				k.updateHostsArray(hosts, EMPTY_ARRAY)
+				hosts := utils.GetAllAddressesFromEndpoint(newObj.(*v1.Endpoints))
+				oldHosts := utils.GetAllAddressesFromEndpoint(oldObj.(*v1.Endpoints))
+				k.updateHostsArray(hosts, oldHosts)
 			},
 			DeleteFunc: func(obj interface{}) {
-				hosts := getAllAddressesFromEndpoint(obj.(*v1.Endpoints))
+				hosts := utils.GetAllAddressesFromEndpoint(obj.(*v1.Endpoints))
 				k.updateHostsArray(EMPTY_ARRAY, hosts)
 			},
 		},
@@ -93,28 +85,22 @@ func (k *KubernetesPeerDiscovery) Initialize() error {
 	return nil
 }
 
-func getAllAddressesFromEndpoint(endpoint *v1.Endpoints) []string {
-	hosts := make([]string, 256)
-	for _, address := range endpoint.Subsets {
-		for _, address := range address.Addresses {
-			if address.IP != "" {
-				hosts = append(hosts, address.IP)
-			}
-		}
-	}
-	return hosts
-}
-
 func (k *KubernetesPeerDiscovery) updateHostsArray(NewHosts []string, ToRemoveHosts []string) {
-	difference := diff.Difference[string](k.currentHosts, NewHosts, ToRemoveHosts)
+	beforeState := k.currentHosts.Copy().Slice()
+	difference := diff.Difference(k.currentHosts, NewHosts, ToRemoveHosts)
+	if k.currentHosts.Size() == 0 {
+		return
+	}
+	added, removed := mapToPeers(difference.Added), mapToPeers(difference.Removed)
+	slog.With("added", added, "removed", removed, "new", NewHosts, "toDelete", ToRemoveHosts, "before", mapToPeers(beforeState)).Info("New Host State Diff")
 	k.notificationChannel <- diff.DifferenceOutput[Peer]{
-		Added:   mapToPeers(difference.Added),
-		Removed: mapToPeers(difference.Removed),
+		Added:   added,
+		Removed: removed,
 	}
 }
 
 func mapToPeers(hosts []string) []Peer {
-	mappedHosts := make([]Peer, len(hosts))
+	mappedHosts := make([]Peer, 0)
 	for _, address := range hosts {
 		mappedHosts = append(mappedHosts, Peer{
 			hostname: address,
@@ -124,7 +110,7 @@ func mapToPeers(hosts []string) []Peer {
 	return mappedHosts
 }
 
-func (k *KubernetesPeerDiscovery) GetCurrentHosts() ([]Peer, error) {
+func (k *KubernetesPeerDiscovery) CurrentHosts() ([]Peer, error) {
 	mappedHosts := mapToPeers(k.currentHosts.Slice())
 	return mappedHosts, nil
 }

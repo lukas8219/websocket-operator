@@ -10,12 +10,6 @@ import (
 func handleRebalanceLoop(resolver rslv.Resolver, connections map[string]*connection.Connection) {
 	slog.Info("Starting rebalance loop")
 	for _ = range resolver.VersionUpgradeChannel() {
-		hosts, err := resolver.CurrentHosts()
-		if err != nil {
-			slog.Error(err.Error())
-			continue
-		}
-		slog.Debug("Received message to rebalance", "hosts", hosts)
 		upstreamHostsToConnectionTracker := make(map[string]*connection.Connection, len(connections))
 		for user, connectionTracker := range connections {
 			newHost, err := resolver.Lookup([]byte(user))

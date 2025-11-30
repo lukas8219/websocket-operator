@@ -1,6 +1,7 @@
 package peer_discovery
 
 import (
+	"encoding/json"
 	"fmt"
 	"lukas8219/websocket-operator/internal/diff"
 )
@@ -14,8 +15,18 @@ func (p Peer) Hostname() string {
 	return p.hostname
 }
 
-func (p *Peer) String() string {
-	return p.hostname
+func (p Peer) String() string {
+	return p.SocketAddres()
+}
+
+func (p Peer) MarshalJSON() ([]byte, error) {
+	return json.Marshal(&struct {
+		Hostname string `json:"hostname"`
+		Port     uint16 `json:"port"`
+	}{
+		Hostname: p.Hostname(),
+		Port:     p.Port(),
+	})
 }
 
 func (p Peer) Port() uint16 {
