@@ -1,4 +1,4 @@
-package rendezvous
+package consistent_hashing
 
 import (
 	"lukas8219/websocket-operator/internal/peer_discovery"

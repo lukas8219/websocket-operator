@@ -1,18 +1,27 @@
-.PHONY: all build-sidecar build-controller gen-certs
+COMPONENTS := sidecar controller loadbalancer
 
-all: build-sidecar build-controller gen-certs
+.PHONY: all gen-certs test test-race
+.DEFAULT_GOAL := all
+all: $(addprefix build-,$(COMPONENTS))
 
-build-sidecar:
-	@echo "Building WebSocket Proxy Sidecar..."
-	./scripts/build-sidecar.sh
 
-build-controller:
-	@echo "Building WebSocket Operator Controller..."
-	./scripts/build-controller.sh
-	
-build-loadbalancer:
-	@echo "Building WebSocket Operator LoadBalancer..."
-	./scripts/build-loadbalancer.sh
+build-%:
+	@echo "Building WebSocket $*"
+	COMPONENT="$*" ./scripts/build.sh
+
+push-%:
+	@echo "Build and Push Image $*"
+	COMPONENT="$*" PUSH="true" ./scripts/build.sh
+
+push: $(addprefix push-,$(COMPONENTS))
+build: $(addprefix build-,$(COMPONENTS))
+
+run-%:
+	go run "./cmd/$*/"
+
+test-server-push:
+	docker build -f deployments/local/Dockerfile -t lukas8219/websocket-operator-test-server:latest
+	docker push -t lukas8219/websocket-operator-test-server:latest
 
 gen-certs:
 	@echo "Generating TLS certificates..."
@@ -21,6 +30,9 @@ gen-certs:
 test:
 	@echo "Running tests..."
 	go test -v ./...
+
+integration:
+	go test -v ./integration_tests/...
 
 test-race:
 	@echo "Running tests with race detector..."

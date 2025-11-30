@@ -6,7 +6,8 @@ set -e
 # Set variables
 REGISTRY=${REGISTRY:-"docker.io"}
 REPOSITORY=${REPOSITORY:-"lukas8219"}
-IMAGE_NAME=${IMAGE_NAME:-"websocket-operator-controller"}
+COMPONENT=${COMPONENT}
+IMAGE_NAME="websocket-operator-$COMPONENT"
 TAG=${TAG:-"latest"}
 
 # Full image name
@@ -15,7 +16,7 @@ FULL_IMAGE_NAME="${REGISTRY}/${REPOSITORY}/${IMAGE_NAME}:${TAG}"
 echo "Building image: ${FULL_IMAGE_NAME}"
 
 # Build the Docker image
-docker build -f cmd/controller/Dockerfile -t ${FULL_IMAGE_NAME} ${BUILD_ARGS} .
+docker build -f cmd/$COMPONENT/Dockerfile -t ${FULL_IMAGE_NAME} ${BUILD_ARGS} .
 
 # Push the Docker image
 if [ "${PUSH:-false}" == "true" ]; then
@@ -23,4 +24,4 @@ if [ "${PUSH:-false}" == "true" ]; then
   docker push ${FULL_IMAGE_NAME}
 fi
 
-echo "Done!" 
+echo "Done!"

@@ -16,7 +16,7 @@ func (p *WSProxier) ProxyDownstreamToUpstream() (net.Conn, error) {
 	upstreamCancelChan := p.tracker.UpstreamCancelChan()
 	downstreamConn := p.tracker.DownstreamConn()
 
-	proxiedConn, _, _, err := p.dialer.Dial(context.Background(), "ws://"+host)
+	proxiedConn, _, _, err := p.Dial(context.Background(), "ws://"+host)
 	if err != nil {
 		p.tracker.Error("Failed to dial upstream", "error", err)
 		return nil, err
