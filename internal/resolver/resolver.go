@@ -72,7 +72,7 @@ func (r *ResolverImpl) CurrentHosts() ([]peerDiscovery.Peer, error) {
 	_, found := r.peerHostsCache.Get(createPeerHostCacheKey(r.version.Load()))
 	if found {
 		slog.Debug("Cache hit", "version", r.version.Load())
-		// return result.([]peerDiscovery.Peer), nil
+		return result.([]peerDiscovery.Peer), nil
 	}
 	hosts, err := r.PeerDiscovery.CurrentHosts()
 	if err != nil {
