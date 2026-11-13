@@ -2,6 +2,7 @@
   "name": "local-test",
   "version": "1.0.0",
   "main": "simple-socket-client.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -10,8 +11,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "socket.io-client": "^4.8.1",
-    "ws": "^8.18.1",
+    "ws": "8.18.1",
     "yargs": "^17.7.2"
   }
 }
