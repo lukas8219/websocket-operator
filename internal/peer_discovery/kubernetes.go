@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"lukas8219/websocket-operator/internal/diff"
 	"lukas8219/websocket-operator/internal/utils"
+	"sync"
 
 	goset "github.com/hashicorp/go-set/v3"
 	v1 "k8s.io/api/core/v1"
@@ -20,6 +21,7 @@ type KubernetesPeerDiscoveryOptions struct {
 }
 
 type KubernetesPeerDiscovery struct {
+	mu                   sync.RWMutex
 	k8sClient            *kubernetes.Clientset
 	cacheStore           cache.Store
 	currentHosts         *goset.Set[string]
@@ -86,9 +88,11 @@ func (k *KubernetesPeerDiscovery) Initialize() error {
 }
 
 func (k *KubernetesPeerDiscovery) updateHostsArray(NewHosts []string, ToRemoveHosts []string) {
+	k.mu.Lock()
 	beforeState := k.currentHosts.Copy().Slice()
 	difference := diff.Difference(k.currentHosts, NewHosts, ToRemoveHosts)
-	if k.currentHosts.Size() == 0 {
+	k.mu.Unlock()
+	if len(difference.Added) == 0 && len(difference.Removed) == 0 {
 		return
 	}
 	added, removed := mapToPeers(difference.Added), mapToPeers(difference.Removed)
@@ -111,6 +115,8 @@ func mapToPeers(hosts []string) []Peer {
 }
 
 func (k *KubernetesPeerDiscovery) CurrentHosts() ([]Peer, error) {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
 	mappedHosts := mapToPeers(k.currentHosts.Slice())
 	return mappedHosts, nil
 }

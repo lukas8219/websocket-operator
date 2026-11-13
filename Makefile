@@ -1,6 +1,6 @@
 COMPONENTS := sidecar controller loadbalancer
 
-.PHONY: all build push gen-certs test test-race test-server-push
+.PHONY: all build push gen-certs test test-race test-server-push integration
 .DEFAULT_GOAL := all
 all: $(addprefix build-,$(COMPONENTS))
 
@@ -34,3 +34,7 @@ test:
 test-race:
 	@echo "Running tests with race detector..."
 	go test -race -v ./...
+
+# Requires a dedicated test cluster selected by KUBECONFIG.
+integration:
+	go test -tags=integration -count=1 -timeout=10m -v ./integration_tests/...
