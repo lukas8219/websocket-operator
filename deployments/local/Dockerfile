@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Copy package files and install dependencies
 COPY package*.json ./
-RUN npm install
+RUN npm ci --omit=dev
 
 # Bundle app source
 COPY simple-socket-server.js ./
