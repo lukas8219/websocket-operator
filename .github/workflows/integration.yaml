@@ -1,0 +1,51 @@
+name: Kubernetes integration
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/integration.yaml'
+      - 'integration_tests/**'
+      - 'internal/peer_discovery/**'
+      - 'internal/diff/**'
+      - 'internal/utils/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+
+permissions:
+  contents: read
+
+jobs:
+  peer-discovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install kind
+        run: go install sigs.k8s.io/kind@v0.30.0
+      - name: Create disposable cluster
+        run: |
+          kind create cluster --name websocket-tests --image kindest/node:v1.34.0 \
+            --kubeconfig "$RUNNER_TEMP/websocket-tests.kubeconfig" --wait 120s
+      - name: Test peer discovery against Kubernetes
+        run: KUBECONFIG="$RUNNER_TEMP/websocket-tests.kubeconfig" make integration
+      - name: Collect cluster logs on failure
+        if: failure()
+        continue-on-error: true
+        run: kind export logs "$RUNNER_TEMP/kind-logs" --name websocket-tests
+      - name: Upload cluster logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kind-logs
+          path: ${{ runner.temp }}/kind-logs
+          if-no-files-found: ignore
+      - name: Delete cluster
+        if: always()
+        run: |
+          if command -v kind >/dev/null; then kind delete cluster --name websocket-tests; fi
