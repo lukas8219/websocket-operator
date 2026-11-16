@@ -50,11 +50,15 @@ type Rendezvous struct {
 func (r *Rendezvous) Transaction(NewNodes, RemoveNodes []peer_discovery.Peer) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, Node := range NewNodes {
-		r.Add(Node.String())
+	// The transaction already owns mu; calling Add or Remove would lock it again.
+	for _, node := range NewNodes {
+		name := node.String()
+		if _, exists := r.members[name]; !exists {
+			r.add(WeightedMember{member: name, weight: 1.0})
+		}
 	}
-	for _, Node := range RemoveNodes {
-		r.Remove(Node.String())
+	for _, node := range RemoveNodes {
+		delete(r.members, node.String())
 	}
 }
 
@@ -177,6 +181,8 @@ func (r *Rendezvous) GetNodes() (members []WeightedMember) {
 }
 
 func (r *Rendezvous) GetAllHosts() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	hosts := make([]string, 0)
 	for _, member := range r.members {
 		hosts = append(hosts, member.member)
