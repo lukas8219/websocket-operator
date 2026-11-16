@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	rslv "lukas8219/websocket-operator/internal/resolver"
 	"net/http"
@@ -27,9 +28,9 @@ func (h *HttpTransport) Write(
 	OpCode ws.OpCode,
 	Data []byte,
 ) error {
-	peer, error := h.resolver.Lookup(Recipient)
-	if error != nil {
-		return error
+	peer, err := h.resolver.Lookup(Recipient)
+	if err != nil {
+		return err
 	}
 	slog := slog.With("recipientId", Recipient).With("opCode", OpCode).With("peer", peer).With("component", "proxy")
 	//TODO hardcoded 5 seconds to debug DNS resolve issues
@@ -46,12 +47,21 @@ func (h *HttpTransport) Write(
 	req.Header.Set("ws-user-id", string(Recipient))
 
 	slog.Debug("POST request", "url", url)
-	resp, err := http.DefaultClient.Do(req)
+	// A redirect is not confirmation that the selected peer accepted delivery.
+	// Copy the client so this policy does not alter other HTTP users.
+	client := *http.DefaultClient
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		slog.Error("Error sending request", "error", err)
 		return err
 	}
 	slog.Debug("Received response", "status", resp.Status)
 	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("peer %s rejected message: HTTP %d", peer.SocketAddres(), resp.StatusCode)
+	}
 	return nil
 }
