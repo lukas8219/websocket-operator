@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"sync"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
@@ -76,19 +77,12 @@ func main() {
 	transport := transports.NewHTTPTransport(resolver)
 
 	slog.Info("Starting server", "port", *port)
-	// Map to store active WebSocket connections
-	// Key: user ID, Value: ConnectionTracker
-	connections := make(map[string]*ConnectionTracker)
+	connections := newConnectionRegistry()
 	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("Request received", "method", r.Method, "path", r.URL.Path)
 		if r.Method == http.MethodPost && r.URL.Path == "/message" {
-			if connections[r.Header.Get("ws-user-id")] == nil {
-				slog.Debug("No recipient found in-memory", "user", r.Header.Get("ws-user-id"))
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
 			userId := r.Header.Get("ws-user-id")
-			connectionTracker := connections[userId]
+			connectionTracker := connections.get(userId)
 			if connectionTracker == nil {
 				slog.Debug("No connection found", "userId", userId)
 				w.WriteHeader(http.StatusNotFound)
@@ -141,12 +135,14 @@ func main() {
 			downstreamConn: clientConn,
 			Transport:      &transport,
 		}
-		connections[user] = connectionTracker
-		//TODO no good here
+		connections.register(connectionTracker)
+		var closeOnce sync.Once
 		closeConnections := func() {
-			connections[user] = nil
-			connectionTracker.downstreamConn.Close()
-			connectionTracker.upstreamConn.Close()
+			closeOnce.Do(func() {
+				connections.remove(connectionTracker)
+				connectionTracker.downstreamConn.Close()
+				connectionTracker.upstreamConn.Close()
+			})
 		}
 
 		go proxySidecarServerToClient(closeConnections, connectionTracker)
@@ -179,7 +175,7 @@ func proxySidecarServerToClient(deferClose func(), connectionTracker *Connection
 }
 
 // TODO functions is doing too much. Split into smaller modules
-func handleIncomingMessagesToProxy(connections map[string]*ConnectionTracker, deferClose func(), connectionTracker *ConnectionTracker) {
+func handleIncomingMessagesToProxy(connections *connectionRegistry, deferClose func(), connectionTracker *ConnectionTracker) {
 	defer deferClose()
 	for {
 		msg, op, err := wsutil.ReadClientData(connectionTracker.downstreamConn)
@@ -204,7 +200,7 @@ func handleIncomingMessagesToProxy(connections map[string]*ConnectionTracker, de
 			return
 		}
 
-		recipientConnection := connections[recipientIdString]
+		recipientConnection := connections.get(recipientIdString)
 
 		slog.Debug("Message recipient", "recipientId", recipientIdString, "recipientConnection", recipientConnection)
 		if recipientConnection == nil {
