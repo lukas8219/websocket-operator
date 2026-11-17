@@ -20,6 +20,7 @@ func (p *WSProxier) ProxyDownstreamToUpstream() (net.Conn, error) {
 	proxiedConn, reader, _, err := p.Dial(context.Background(), "ws://"+host)
 	if err != nil {
 		p.tracker.Error("Failed to dial upstream", "error", err)
+		downstreamConn.Close()
 		return nil, err
 	}
 	proxiedConn = utils.WithBufferedReader(proxiedConn, reader)
@@ -42,6 +43,11 @@ func (p *WSProxier) ProxyDownstreamToUpstream() (net.Conn, error) {
 	//TODO missing defer
 	proxySidecarServerToClient := func() {
 		defer waitSignal()
+		defer func() {
+			if upstreamContext.Err() == nil {
+				downstreamConn.Close()
+			}
+		}()
 		for {
 			select {
 			case <-upstreamContext.Done():
