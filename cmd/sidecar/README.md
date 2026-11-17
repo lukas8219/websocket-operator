@@ -2,7 +2,8 @@
 
 The sidecar accepts a WebSocket connection with a `ws-user-id` header, opens an
 application connection on `localhost:3001`, and registers the user. Incoming client
-messages must be JSON with a string `recipientId`; see the [routing contract](../../README.md#routing-contract).
+messages default to JSON with a string `recipientId`; see the [routing contract](../../README.md#routing-contract).
+For custom wire formats, see [compiled routing plugins](../../internal/routing/README.md).
 Messages for a local recipient go to that recipient's application connection.
 Messages for a remote recipient are forwarded to another sidecar over HTTP.
 
