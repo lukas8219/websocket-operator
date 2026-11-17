@@ -1,72 +1,56 @@
-# WebSocket Operator Controller
+# WebSocket admission controller
 
-This controller is a Kubernetes admission webhook that automatically injects a WebSocket proxy sidecar into deployments with the label `lukas8219/ws-operator/enabled: "true"`.
+The controller watches admission requests for Deployments. A Deployment with
+`metadata.labels["ws.operator/enabled"]: "true"` receives a `websocket-proxy`
+container unless it already has one. It also creates `ws-proxy-headless` in the
+Deployment's namespace. The target application must listen on port 3001.
 
-## Prerequisites
+## Build
 
-- Docker
-- kubectl
-- A Kubernetes cluster
-- Access to a Docker registry (optional for pushing images)
+Run from the **repository root**:
 
-## Building the Docker Image
-
-To build the Docker image, run:
-
-```bash
-# From the controller directory
-chmod +x build.sh
-./build.sh
+```sh
+make build-controller
+# Optional publishing, using credentials for your registry:
+# REGISTRY=docker.io REPOSITORY=your-account TAG=dev make push-controller
 ```
 
-To build and push the image to a registry:
+There are no component-local `build.sh` or `deploy.sh` scripts. The shared build
+entry point is `scripts/build.sh`, invoked by the Makefile.
 
-```bash
-# From the controller directory
-PUSH=true REGISTRY=your-registry REPOSITORY=your-repo ./build.sh
+## Development deployment
+
+Use a dedicated Kubernetes cluster. The example manifests reference
+`docker.io/lukas8219/websocket-operator-{controller,loadbalancer}:latest`; the
+controller injects `docker.io/lukas8219/websocket-operator-sidecar:latest`.
+Check that those images contain the revision you intend to run. Building an image
+locally does not publish it or make it available to cluster nodes.
+
+From the repository root, with `openssl` and `kubectl` installed:
+
+```sh
+make gen-certs
+kubectl apply -f deployments/k8s/namespace.yaml
+kubectl apply -f deployments/k8s/configmap.yaml -f deployments/k8s/rbac.yaml
+kubectl apply -f deployments/k8s/tls-secrets-generated.yaml
+kubectl apply -f deployments/k8s/service.yaml -f deployments/k8s/deployment.yaml
+kubectl -n websocket-system rollout status deployment/websocket-operator-controller
+kubectl apply -f deployments/k8s/webhook-generated.yaml
+kubectl apply -f deployments/k8s/target-deploy.yaml
 ```
 
-## Deploying to Kubernetes
+Install the webhook **before** the labeled application Deployment so admission
+can inject the sidecar. The target manifest also supplies the application label,
+service account, and port. Inspect injection with
+`kubectl get deployment main-ws-server -o jsonpath='{.spec.template.spec.containers[*].name}'`.
 
-To deploy the controller to Kubernetes, run:
+The certificate script creates a development CA, a certificate for the webhook
+Service DNS names, and rendered Secret/webhook manifests. Generated files are
+ignored by Git. Re-running it rotates certificates; apply both generated manifests
+together. The webhook calls the controller over HTTPS on Service port 443.
 
-```bash
-# From the controller directory
-chmod +x deploy.sh
-./deploy.sh
-```
-
-You can customize the deployment by setting the following environment variables:
-
-```bash
-REGISTRY=your-registry REPOSITORY=your-repo TAG=your-tag ./deploy.sh
-```
-
-## TLS Certificate for the Webhook
-
-The webhook requires TLS certificates to operate securely. The deployment script assumes you have a file named `ca-bundle.pem` in the controller directory. For a production environment, you should:
-
-1. Generate a proper TLS certificate and key for the webhook service
-2. Create a Secret containing these certificates
-3. Mount the Secret in the deployment
-4. Update the MutatingWebhookConfiguration with the proper CA bundle
-
-## Using the Operator
-
-To have the operator inject the WebSocket proxy sidecar into your deployments, add the following label to your deployment:
-
-```yaml
-metadata:
-  labels:
-    lukas8219/ws-operator/enabled: "true"
-```
-
-The controller will automatically inject the WebSocket proxy sidecar container (`lukas8219/websocket-proxy:latest`) into these deployments.
-
-## Troubleshooting
-
-If the webhook isn't working as expected, check:
-
-1. The controller pod logs: `kubectl logs -n websocket-system -l app=websocket-operator-controller`
-2. Ensure the label is correctly applied to your deployments
-3. Verify the webhook configuration is correctly applied: `kubectl get mutatingwebhookconfigurations` 
+For troubleshooting, check the controller rollout, its logs, webhook CA bundle,
+and the exact `ws.operator/enabled` label. The `/health` endpoint uses the same
+HTTP/TLS listener as `/mutate`. Controller flags include `-port`, `-cert-dir`, and
+`-tls-enabled`; disabling TLS is only useful when calling the process directly,
+not through Kubernetes' HTTPS admission webhook.
