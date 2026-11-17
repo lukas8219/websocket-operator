@@ -42,3 +42,8 @@ helm uninstall chat --namespace chat --wait
 
 Helm removes the discovery Service, webhook and TLS Secret. It leaves the namespace,
 application resources and any existing ServiceAccount you supplied under your control.
+
+Run `WS_E2E_INSTALL=helm WS_OPERATOR_USER_HEADER=X-App-User make system-test`
+to build local images, install into a disposable kind namespace, upgrade without
+changing TLS trust, run the full message/recovery suite, and verify uninstall.
+This command owns and deletes its cluster; it does not use your active kubeconfig.
