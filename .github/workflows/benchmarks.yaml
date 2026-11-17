@@ -1,0 +1,33 @@
+name: Benchmarks
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/benchmarks.yaml'
+      - 'internal/**'
+      - 'integration_tests/benchmarks/**'
+      - 'scripts/benchmark.sh'
+      - 'go.mod'
+      - 'go.sum'
+permissions:
+  contents: read
+concurrency:
+  group: benchmarks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  routing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Record routing allocations and profiles
+        run: bash scripts/ci-check.sh bash scripts/benchmark.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: routing-benchmarks
+          path: reports/benchmarks
+          if-no-files-found: error
