@@ -1,5 +1,5 @@
 // Note: For Node.js environments, you'll need to install ws: npm install ws
-// Browser environments can use the native WebSocket API directly
+// Browsers cannot set the custom identity header required by this demo.
 import WebSocket from "ws";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
@@ -55,7 +55,8 @@ const SERVER_URL = `ws://${hostname}`;
 console.log("Connecting to WebSocket server...");
 
 // Create a WebSocket connection
-const socket = new WebSocket(SERVER_URL, { headers: { "ws-user-id": user } });
+const userHeader = argv.userHeader ?? process.env.WS_OPERATOR_USER_HEADER ?? "ws-user-id";
+const socket = new WebSocket(SERVER_URL, { headers: { [userHeader]: user } });
 
 socket.on("upgrade", function (request, socket, head) {
   console.log(request.headers);

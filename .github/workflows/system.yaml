@@ -18,7 +18,13 @@ permissions:
   contents: read
 jobs:
   system:
-    name: Inject and run all components
+    name: System (${{ matrix.header }})
+    strategy:
+      fail-fast: false
+      matrix:
+        header: [ws-user-id, X-App-User]
+    env:
+      WS_OPERATOR_USER_HEADER: ${{ matrix.header }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

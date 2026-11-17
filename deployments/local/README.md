@@ -51,3 +51,6 @@ For automated component tests, use `make test` and `make test-race` at the repos
 root. [Kubernetes discovery tests](../../integration_tests/README.md) require a
 separate test cluster. The old CoreDNS Compose file is not needed by the current
 Kubernetes discovery implementation.
+
+For a configured identity header, pass `--userHeader X-App-User` or set
+`WS_OPERATOR_USER_HEADER=X-App-User`. This must match both Go components.

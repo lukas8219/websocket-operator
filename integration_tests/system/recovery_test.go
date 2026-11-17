@@ -49,7 +49,7 @@ func TestScaleToZeroAndRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.Header.Set("ws-user-id", "e2e-unavailable")
+	request.Header.Set(endpoint(t, "WS_E2E_USER_HEADER"), "e2e-unavailable")
 	response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
 	if err != nil {
 		t.Fatal(err)

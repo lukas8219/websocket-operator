@@ -87,3 +87,7 @@ Set `WS_OPERATOR_USER_HEADER` consistently on the load balancer and every sideca
 internal HTTP delivery. Configure clients to send the same name. Empty/invalid
 names and HTTP/WebSocket protocol headers are rejected at startup. This setting
 does not change the JSON `recipientId` field or add authentication.
+
+System CI runs the full routing and recovery suite with both `ws-user-id` and
+`X-App-User`. Reproduce the custom-header run with
+`WS_OPERATOR_USER_HEADER=X-App-User make system-test`.
