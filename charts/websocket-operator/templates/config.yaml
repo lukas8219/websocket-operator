@@ -1,0 +1,28 @@
+{{- $n := printf "%s-ws" .Release.Name }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $n }}-config
+data:
+  WS_OPERATOR_USER_HEADER: {{ .Values.userHeader | quote }}
+  WS_OPERATOR_NAMESPACE: {{ .Release.Namespace | quote }}
+  WS_OPERATOR_SERVICE: {{ printf "%s-peers" $n | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $n }}-peers
+spec:
+  clusterIP: None
+  selector: {{ .Values.application.selector | toJson }}
+  ports:
+    - {name: websocket, port: 3000, targetPort: 3000}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $n }}-lb
+spec:
+  selector: {app: {{ $n }}-lb}
+  ports:
+    - {name: websocket, port: 8080, targetPort: 8080}

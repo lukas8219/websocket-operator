@@ -1,0 +1,43 @@
+{{- $n := printf "%s-ws" .Release.Name }}
+{{- range $component := list "ctrl" "lb" }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $n }}-{{ $component }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $n }}-discovery
+rules:
+  - apiGroups: [""]
+    resources: [endpoints]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $n }}-discovery
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ $n }}-discovery}
+subjects:
+  - {kind: ServiceAccount, name: {{ $n }}-lb, namespace: {{ .Release.Namespace }}}
+  - {kind: ServiceAccount, name: {{ .Values.application.serviceAccount }}, namespace: {{ .Release.Namespace }}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $n }}-injection
+rules:
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $n }}-injection
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ $n }}-injection}
+subjects:
+  - {kind: ServiceAccount, name: {{ $n }}-ctrl, namespace: {{ .Release.Namespace }}}
