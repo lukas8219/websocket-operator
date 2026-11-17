@@ -31,6 +31,7 @@ done <<'TARGETS'
 ./internal/transports FuzzHTTPTransportEnvelope
 ./internal/transports FuzzHTTPTransportResponseStatus
 ./cmd/sidecar FuzzSidecarMessageBody
+./internal/peer_discovery FuzzPeerSocketAddress
 TARGETS
 printf 'Results: %s\n' "$behavior_logs"
 exit "$behavior_failed"

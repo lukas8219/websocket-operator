@@ -2,8 +2,9 @@ package peer_discovery
 
 import (
 	"encoding/json"
-	"fmt"
 	"lukas8219/websocket-operator/internal/diff"
+	"net"
+	"strconv"
 )
 
 type Peer struct {
@@ -34,7 +35,7 @@ func (p Peer) Port() uint16 {
 }
 
 func (p Peer) SocketAddres() string {
-	return fmt.Sprintf("%s:%d", p.hostname, p.port)
+	return net.JoinHostPort(p.hostname, strconv.Itoa(int(p.port)))
 }
 
 type PeerDiscovery interface {
