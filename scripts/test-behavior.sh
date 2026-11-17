@@ -29,6 +29,7 @@ done <<'TARGETS'
 ./internal/consistent_hashing FuzzJumpHashOrderIndependence
 ./internal/peer_discovery FuzzKubernetesPeerSnapshots
 ./internal/transports FuzzHTTPTransportEnvelope
+./internal/transports FuzzHTTPTransportResponseStatus
 TARGETS
 printf 'Results: %s\n' "$behavior_logs"
 exit "$behavior_failed"
