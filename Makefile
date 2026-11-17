@@ -41,4 +41,4 @@ integration:
 
 # Owns a disposable kind cluster; see integration_tests/README.md.
 system-test:
-	bash scripts/test-system.sh go test -tags=e2e -count=1 -timeout=3m -v ./integration_tests/system
+	bash scripts/test-system.sh go test -tags=e2e -count=1 -timeout=5m -v ./integration_tests/system

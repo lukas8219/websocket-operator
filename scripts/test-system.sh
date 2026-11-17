@@ -74,6 +74,7 @@ while (( SECONDS < deadline )); do
   sleep 0.2
 done
 [[ -n "$ws_port" && -n "$hosts_port" ]] || { cat "$system_tmp/ports.log"; exit 1; }
+export WS_E2E_CLUSTER="$cluster"
 export WS_E2E_URL="ws://127.0.0.1:$ws_port"
 export WS_E2E_HOSTS_URL="http://127.0.0.1:$hosts_port"
 printf 'Injected deployment ready; WebSocket endpoint: %s\n' "$WS_E2E_URL"
