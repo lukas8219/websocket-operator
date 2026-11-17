@@ -67,3 +67,10 @@ separate pod, and verifies the demo application's exact reply through the load
 balancer. It also checks rejection of a missing routing identity. The `e2e` build
 tag keeps these tests separate from discovery-only and unit tests; running them
 without the fixture's endpoint variables fails instead of silently skipping.
+
+The full-system suite also opens concurrent clients, scales the application to
+zero, requires HTTP 503 and disconnects for unroutable clients, restores three
+replicas, and verifies a fresh connection can deliver again. Scaling commands
+explicitly target the fixture-owned kind context, never the caller's current
+context. Clients must reconnect after all peers disappear; the test does not
+claim lossless migration of an in-flight message.
