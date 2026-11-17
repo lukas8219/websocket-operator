@@ -32,10 +32,15 @@ func TestBehaviorSidecarProcess(t *testing.T) {
 
 type sidecarFixture struct {
 	url, logPath string
+	userHeader   string
 	client       *http.Client
 }
 
 func startBehaviorSidecar(t testing.TB) sidecarFixture {
+	return startBehaviorSidecarWithHeader(t, "ws-user-id")
+}
+
+func startBehaviorSidecarWithHeader(t testing.TB, userHeader string) sidecarFixture {
 	t.Helper()
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -87,7 +92,7 @@ func startBehaviorSidecar(t testing.TB) sidecarFixture {
 		t.Fatal(err)
 	}
 	child := exec.Command(os.Args[0], "-test.run=^TestBehaviorSidecarProcess$")
-	child.Env = append(os.Environ(), "KUBERNETES_SERVICE_HOST=", "KUBERNETES_SERVICE_PORT=", "WS_BEHAVIOR_CHILD=1", "WS_BEHAVIOR_PORT="+port, "WS_BEHAVIOR_UPSTREAM="+upstream, "KUBECONFIG="+configPath)
+	child.Env = append(os.Environ(), "KUBERNETES_SERVICE_HOST=", "KUBERNETES_SERVICE_PORT=", "WS_BEHAVIOR_CHILD=1", "WS_OPERATOR_USER_HEADER="+userHeader, "WS_BEHAVIOR_PORT="+port, "WS_BEHAVIOR_UPSTREAM="+upstream, "KUBECONFIG="+configPath)
 	child.Stdout = logFile
 	child.Stderr = logFile
 	if err := child.Start(); err != nil {
@@ -125,13 +130,13 @@ func startBehaviorSidecar(t testing.TB) sidecarFixture {
 	}
 	transport := &http.Transport{Proxy: nil}
 	t.Cleanup(transport.CloseIdleConnections)
-	return sidecarFixture{url: address, logPath: logPath, client: &http.Client{Transport: transport, Timeout: time.Second}}
+	return sidecarFixture{userHeader: userHeader, url: address, logPath: logPath, client: &http.Client{Transport: transport, Timeout: time.Second}}
 }
 
 func behaviorSidecarSession(fixture sidecarFixture, user string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	dialer := ws.Dialer{Header: ws.HandshakeHeaderHTTP(http.Header{"Ws-User-Id": []string{user}})}
+	dialer := ws.Dialer{Header: ws.HandshakeHeaderHTTP(http.Header{fixture.userHeader: []string{user}})}
 	conn, _, _, err := dialer.Dial(ctx, "ws://"+fixture.url)
 	if err != nil {
 		return err
@@ -142,7 +147,7 @@ func behaviorSidecarSession(fixture sidecarFixture, user string) error {
 		if err != nil {
 			return err
 		}
-		req.Header.Set("ws-user-id", user)
+		req.Header.Set(fixture.userHeader, user)
 		response, err := fixture.client.Do(req)
 		if err != nil {
 			return err

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"lukas8219/websocket-operator/cmd/loadbalancer/server"
+	"lukas8219/websocket-operator/internal/config"
 	"lukas8219/websocket-operator/internal/consistent_hashing"
 	"lukas8219/websocket-operator/internal/logger"
 	"lukas8219/websocket-operator/internal/peer_discovery"
@@ -16,6 +17,10 @@ func main() {
 	// mode := flag.String("mode", "kubernetes", "Mode to use")
 	debug := flag.Bool("debug", true, "Debug mode")
 	flag.Parse()
+	userHeader, err := config.UserHeaderFromEnv()
+	if err != nil {
+		log.Fatalf("routing configuration: %v", err)
+	}
 	logger.SetupLogger(*debug)
 	client, err := utils.NewKubernetesClient()
 	if err != nil {
@@ -32,7 +37,8 @@ func main() {
 	)
 	go resolver.Init()
 	server.StartServer(server.ServerConfig{
-		Resolver: &resolver,
-		Port:     *port,
+		Resolver:   &resolver,
+		Port:       *port,
+		UserHeader: userHeader,
 	})
 }

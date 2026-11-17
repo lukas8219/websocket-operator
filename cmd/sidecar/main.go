@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"lukas8219/websocket-operator/internal/config"
 	"lukas8219/websocket-operator/internal/consistent_hashing"
 	"lukas8219/websocket-operator/internal/logger"
 	"lukas8219/websocket-operator/internal/peer_discovery"
@@ -61,6 +62,10 @@ func main() {
 	// mode := flag.String("mode", "kubernetes", "Mode to use")
 	debug := flag.Bool("debug", false, "Debug mode")
 	flag.Parse()
+	userHeader, err := config.UserHeaderFromEnv()
+	if err != nil {
+		log.Fatalf("routing configuration: %v", err)
+	}
 	logger.SetupLogger(*debug)
 	//TODO move to config
 	client, err := utils.NewKubernetesClient()
@@ -74,14 +79,14 @@ func main() {
 	})
 	resolver := resolver.New(peerDiscovery, consistent_hashing.NewJumpHash(peerDiscovery))
 	go resolver.Init()
-	transport := transports.NewHTTPTransport(resolver)
+	transport := transports.NewHTTPTransport(resolver, userHeader)
 
 	slog.Info("Starting server", "port", *port)
 	connections := newConnectionRegistry()
 	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("Request received", "method", r.Method, "path", r.URL.Path)
 		if r.Method == http.MethodPost && r.URL.Path == "/message" {
-			userId := r.Header.Get("ws-user-id")
+			userId := r.Header.Get(userHeader)
 			connectionTracker := connections.get(userId)
 			if connectionTracker == nil {
 				slog.Debug("No connection found", "userId", userId)
@@ -110,7 +115,7 @@ func main() {
 			}
 			return
 		}
-		user := r.Header.Get("ws-user-id")
+		user := r.Header.Get(userHeader)
 		if user == "" {
 			slog.Debug("No user id provided")
 			w.WriteHeader(http.StatusBadRequest)

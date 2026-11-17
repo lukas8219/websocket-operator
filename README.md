@@ -78,3 +78,12 @@ namespace is insufficient to move the application.
 Component details: [sidecar](cmd/sidecar/README.md),
 [demo server/client](deployments/local/README.md), and
 [behavioral testing](docs/testing/fuzz-review.md).
+
+## Configuring the routing identity header
+
+Set `WS_OPERATOR_USER_HEADER` consistently on the load balancer and every sidecar
+(default: `ws-user-id`). The example ConfigMap supplies it to both. For example,
+`X-App-User` selects that header for client handshakes, upstream handshakes, and
+internal HTTP delivery. Configure clients to send the same name. Empty/invalid
+names and HTTP/WebSocket protocol headers are rejected at startup. This setting
+does not change the JSON `recipientId` field or add authentication.

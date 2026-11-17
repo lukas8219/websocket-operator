@@ -2,8 +2,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  WS_OPERATOR_USER_HEADER: "ws-user-id"
   name: websocket-operator-config
   labels:
     app: websocket-operator
 data:
+  WS_OPERATOR_USER_HEADER: "ws-user-id"
   WS_OPERATOR_SRV_DNS_RECORD: "ws-proxy-headless.default.svc.cluster.local"

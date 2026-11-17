@@ -13,11 +13,11 @@ type Connection struct {
 }
 
 // NewConnection creates a fully configured connection
-func NewConnection(user, upstreamHost, downstreamHost string, downstreamConn net.Conn) *Connection {
+func NewConnection(user, upstreamHost, downstreamHost string, downstreamConn net.Conn, userHeader string) *Connection {
 	tracker := NewTracker(user, upstreamHost, downstreamHost, downstreamConn)
 	dialer := ws.Dialer{
 		Header: ws.HandshakeHeaderHTTP{
-			"ws-user-id": []string{user},
+			userHeader: []string{user},
 		},
 	}
 	proxier := NewWSProxier(tracker, &dialer)
