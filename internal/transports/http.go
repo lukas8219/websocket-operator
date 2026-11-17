@@ -14,13 +14,15 @@ import (
 )
 
 type HttpTransport struct {
-	resolver rslv.Resolver
+	resolver   rslv.Resolver
+	userHeader string
 }
 
 func NewHTTPTransport(
 	resolver rslv.Resolver,
+	userHeader string,
 ) HttpTransport {
-	return HttpTransport{resolver}
+	return HttpTransport{resolver: resolver, userHeader: userHeader}
 }
 
 func (h *HttpTransport) Write(
@@ -44,7 +46,7 @@ func (h *HttpTransport) Write(
 		return errors.Join(errors.New("failed to create request"), err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("ws-user-id", string(Recipient))
+	req.Header.Set(h.userHeader, string(Recipient))
 
 	slog.Debug("POST request", "url", url)
 	// A redirect is not confirmation that the selected peer accepted delivery.

@@ -30,7 +30,7 @@ func transportForServer(t testing.TB, s *httptest.Server) HttpTransport {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewHTTPTransport(transportResolver{peer: peer_discovery.NewPeer(host, uint16(port))})
+	return NewHTTPTransport(transportResolver{peer: peer_discovery.NewPeer(host, uint16(port))}, "ws-user-id")
 }
 
 func FuzzHTTPTransportEnvelope(f *testing.F) {

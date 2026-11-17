@@ -56,14 +56,14 @@ func TestNoPeersRejectsNewConnectionsAndClosesExistingOnes(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("ws-user-id", "user")
 	response := httptest.NewRecorder()
-	handleConnection(unavailable, registry, response, req)
+	handleConnection(unavailable, registry, "ws-user-id", response, req)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("HTTP %d, want 503", response.Code)
 	}
 	downstream, peer := net.Pipe()
 	defer downstream.Close()
 	defer peer.Close()
-	registry.store(connection.NewConnection("user", "old:3000", "client", downstream))
+	registry.store(connection.NewConnection("user", "old:3000", "client", downstream, "ws-user-id"))
 	unavailable.versions <- 1
 	close(unavailable.versions)
 	done := make(chan struct{})

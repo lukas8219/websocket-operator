@@ -11,14 +11,14 @@ import (
 	"github.com/gobwas/ws"
 )
 
-func createHandler(rslv *resolver.Resolver, connections *connectionRegistry) http.HandlerFunc {
+func createHandler(rslv *resolver.Resolver, connections *connectionRegistry, userHeader string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		handleConnection(*rslv, connections, w, r)
+		handleConnection(*rslv, connections, userHeader, w, r)
 	}
 }
 
-func handleConnection(rslv resolver.Resolver, connections *connectionRegistry, w http.ResponseWriter, r *http.Request) {
-	user := r.Header.Get("ws-user-id")
+func handleConnection(rslv resolver.Resolver, connections *connectionRegistry, userHeader string, w http.ResponseWriter, r *http.Request) {
+	user := r.Header.Get(userHeader)
 	if user == "" {
 		slog.Error("No user id provided")
 		w.WriteHeader(http.StatusBadRequest)
@@ -50,7 +50,7 @@ func handleConnection(rslv resolver.Resolver, connections *connectionRegistry, w
 	}
 
 	downstreamConn = utils.WithBufferedReader(downstreamConn, buffered.Reader)
-	proxiedConnection := connection.NewConnection(user, host.SocketAddres(), downstreamConn.RemoteAddr().String(), downstreamConn)
+	proxiedConnection := connection.NewConnection(user, host.SocketAddres(), downstreamConn.RemoteAddr().String(), downstreamConn, userHeader)
 	connections.store(proxiedConnection)
 
 	proxiedConnection.Debug("New connection")

@@ -10,6 +10,7 @@ require (
 	github.com/hashicorp/go-set/v3 v3.0.1
 	github.com/lithammer/go-jump-consistent-hash v1.0.2
 	github.com/zeebo/xxh3 v1.0.2
+	golang.org/x/net v0.38.0
 	k8s.io/api v0.34.1
 	k8s.io/apimachinery v0.34.1
 	k8s.io/client-go v0.34.1
@@ -45,7 +46,6 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/oauth2 v0.27.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/term v0.30.0 // indirect
