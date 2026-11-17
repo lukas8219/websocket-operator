@@ -91,3 +91,9 @@ does not change the JSON `recipientId` field or add authentication.
 System CI runs the full routing and recovery suite with both `ws-user-id` and
 `X-App-User`. Reproduce the custom-header run with
 `WS_OPERATOR_USER_HEADER=X-App-User make system-test`.
+
+For a namespace-scoped install, set `WS_OPERATOR_NAMESPACE` and
+`WS_OPERATOR_SERVICE` on both Go routing components (defaults: `default` and
+`ws-proxy-headless`). The controller accepts `-service-name` and `-config-map`
+to select that same discovery Service and the injected sidecar configuration.
+Each routing pool supports one labeled application Deployment.

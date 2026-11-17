@@ -25,10 +25,12 @@ import (
 )
 
 var (
-	port         int
-	certDir      string
-	tlsEnabled   bool
-	sidecarImage string
+	port          int
+	certDir       string
+	tlsEnabled    bool
+	sidecarImage  string
+	configMapName string
+	serviceName   string
 )
 
 const (
@@ -36,6 +38,8 @@ const (
 )
 
 func init() {
+	flag.StringVar(&configMapName, "config-map", "websocket-operator-config", "ConfigMap in the application namespace used by injected sidecars.")
+	flag.StringVar(&serviceName, "service-name", "ws-proxy-headless", "Headless Service for the application routing pool.")
 	flag.IntVar(&port, "port", 8080, "The port for the webhook server to listen on.")
 	flag.StringVar(&certDir, "cert-dir", "/etc/webhook/certs", "The directory containing the TLS certificates.")
 	flag.BoolVar(&tlsEnabled, "tls-enabled", true, "Whether to enable TLS. Set to false for development only.")
@@ -44,9 +48,11 @@ func init() {
 
 // SidecarInjector handles admission webhook requests
 type SidecarInjector struct {
-	decoder      runtime.Decoder
-	client       kubernetes.Interface
-	sidecarImage string
+	decoder       runtime.Decoder
+	client        kubernetes.Interface
+	sidecarImage  string
+	configMapName string
+	serviceName   string
 }
 
 // NewSidecarInjector creates a new SidecarInjector
@@ -57,9 +63,11 @@ func NewSidecarInjector(client kubernetes.Interface, image string) *SidecarInjec
 	}
 	codecs := serializer.NewCodecFactory(runtimeScheme)
 	return &SidecarInjector{
-		decoder:      codecs.UniversalDeserializer(),
-		client:       client,
-		sidecarImage: image,
+		decoder:       codecs.UniversalDeserializer(),
+		client:        client,
+		sidecarImage:  image,
+		configMapName: "websocket-operator-config",
+		serviceName:   "ws-proxy-headless",
 	}
 }
 
@@ -174,7 +182,7 @@ func (si *SidecarInjector) mutate(ar *admissionv1.AdmissionReview) *admissionv1.
 	}
 
 	// Create a headless service name based on deployment name
-	headlessServiceName := "ws-proxy-headless"
+	headlessServiceName := si.serviceName
 
 	// Create headless service
 	headlessService := &corev1.Service{
@@ -216,7 +224,7 @@ func (si *SidecarInjector) mutate(ar *admissionv1.AdmissionReview) *admissionv1.
 	}
 
 	log.Printf("Injecting sidecar to deployment %s/%s", deployment.Namespace, deployment.Name)
-	patch, err := createPatch(&deployment, si.sidecarImage)
+	patch, err := createPatch(&deployment, si.sidecarImage, si.configMapName)
 	if err != nil {
 		log.Printf("Failed to create patch: %v", err)
 		return &admissionv1.AdmissionResponse{
@@ -240,7 +248,7 @@ func (si *SidecarInjector) mutate(ar *admissionv1.AdmissionReview) *admissionv1.
 }
 
 // createPatch creates a JSON patch to add the sidecar container
-func createPatch(deployment *appsv1.Deployment, image string) ([]byte, error) {
+func createPatch(deployment *appsv1.Deployment, image, configMap string) ([]byte, error) {
 	var patches []map[string]interface{}
 
 	// Add sidecar container
@@ -267,7 +275,7 @@ func createPatch(deployment *appsv1.Deployment, image string) ([]byte, error) {
 			{
 				ConfigMapRef: &corev1.ConfigMapEnvSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: "websocket-operator-config",
+						Name: configMap,
 					},
 				},
 			},
@@ -315,6 +323,8 @@ func main() {
 		log.Fatalf("create Kubernetes client: %v", err)
 	}
 	injector := NewSidecarInjector(client, sidecarImage)
+	injector.configMapName = configMapName
+	injector.serviceName = serviceName
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mutate", injector.sidecarInjectionHandler)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
