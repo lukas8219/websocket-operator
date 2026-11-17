@@ -2,19 +2,20 @@ package server
 
 import (
 	"log/slog"
-	"lukas8219/websocket-operator/cmd/loadbalancer/connection"
 	rslv "lukas8219/websocket-operator/internal/resolver"
 	"time"
 )
 
-func handleRebalanceLoop(resolver rslv.Resolver, connections map[string]*connection.Connection) {
+func handleRebalanceLoop(resolver rslv.Resolver, connections *connectionRegistry) {
 	slog.Info("Starting rebalance loop")
 	for _ = range resolver.VersionUpgradeChannel() {
-		upstreamHostsToConnectionTracker := make(map[string]*connection.Connection, len(connections))
-		for user, connectionTracker := range connections {
-			newHost, err := resolver.Lookup([]byte(user))
+		for _, connectionTracker := range connections.snapshot() {
+			newHost, err := resolver.Lookup([]byte(connectionTracker.User()))
 			if err != nil {
-				panic(err) //TODO
+				connectionTracker.Error("No peer available; closing connection", "error", err)
+				connectionTracker.Close()
+				connections.remove(connectionTracker)
+				continue
 			}
 			previousHost := connectionTracker.UpstreamHost()
 			if previousHost == newHost.SocketAddres() {
@@ -35,7 +36,6 @@ func handleRebalanceLoop(resolver rslv.Resolver, connections map[string]*connect
 			connectionTracker.Info("Rebalancing connection from", "previous", previousHost, "new", newHost)
 			//TODO: stopping down -> up could cause issues if this is mid read/write
 			go connectionTracker.Handle()
-			upstreamHostsToConnectionTracker[connectionTracker.User()] = connectionTracker
 		}
 	}
 }

@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"log/slog"
-	"lukas8219/websocket-operator/cmd/loadbalancer/connection"
 	"lukas8219/websocket-operator/internal/resolver"
 	"net/http"
 )
@@ -15,7 +14,7 @@ type ServerConfig struct {
 
 func StartServer(config ServerConfig) {
 	slog.Info("Starting load balancer server", "port", config.Port)
-	connections := make(map[string]*connection.Connection) //TODO: This could be a broadcast instead of a single recipient/connection
+	connections := newConnectionRegistry()
 
 	go handleRebalanceLoop(*config.Resolver, connections)
 	//TODO how to properly test this - aka not having a server running at all
