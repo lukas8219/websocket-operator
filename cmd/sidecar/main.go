@@ -83,10 +83,19 @@ func main() {
 	})
 	resolver := resolver.New(peerDiscovery, consistent_hashing.NewJumpHash(peerDiscovery))
 	go resolver.Init()
-	transport := transports.NewHTTPTransport(resolver, userHeader)
+	connections := newConnectionRegistry()
+	deliver := localDelivery(connections)
+	transport, err := transports.Open(os.Getenv("WS_OPERATOR_TRANSPORT_PLUGIN"), transports.Options{
+		Resolver: resolver, UserHeader: userHeader, Deliver: deliver,
+	}, transportPlugins)
+	if err != nil {
+		log.Fatalf("transport plugin: %v", err)
+	}
+	if closer, ok := transport.(io.Closer); ok {
+		defer closer.Close()
+	}
 
 	slog.Info("Starting server", "port", *port)
-	connections := newConnectionRegistry()
 	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("Request received", "method", r.Method, "path", r.URL.Path)
 		if r.Method == http.MethodPost && r.URL.Path == "/message" {
@@ -112,7 +121,7 @@ func main() {
 			opCode := ws.OpCode(body[0])
 			message := body[1:]
 			slog.Debug("Writing message to client", "userId", userId, "opCode", opCode, "message", string(message))
-			err = wsutil.WriteClientMessage(connectionTracker.upstreamConn, opCode, message)
+			err = deliver([]byte(userId), opCode, message)
 			if err != nil {
 				slog.Error("Failed to write WebSocket message", "error", err)
 				return
@@ -149,7 +158,7 @@ func main() {
 			downstreamHost: r.RemoteAddr,
 			upstreamConn:   proxiedConn,
 			downstreamConn: clientConn,
-			Transport:      &transport,
+			Transport:      transport,
 		}
 		connections.register(connectionTracker)
 		var closeOnce sync.Once
