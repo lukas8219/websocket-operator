@@ -1,0 +1,36 @@
+name: System integration
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/system.yaml'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'integration_tests/**'
+      - 'deployments/**'
+      - 'scripts/**'
+      - 'go.mod'
+      - 'go.sum'
+concurrency:
+  group: system-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  system:
+    name: Inject and run all components
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.34.0
+      - name: Install kind
+        run: go install sigs.k8s.io/kind@v0.30.0
+      - name: Test deployment and injection
+        run: bash scripts/ci-check.sh bash scripts/test-system.sh
