@@ -1,0 +1,36 @@
+name: Autobahn conformance
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/autobahn.yaml'
+      - 'cmd/loadbalancer/**'
+      - 'internal/**'
+      - 'integration_tests/autobahn/**'
+      - 'scripts/test-autobahn.sh'
+      - 'go.mod'
+      - 'go.sum'
+permissions:
+  contents: read
+concurrency:
+  group: autobahn-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Check report validation
+        run: python3 integration_tests/autobahn/check_test.py
+      - name: Check core WebSocket protocol behavior
+        run: bash scripts/ci-check.sh bash scripts/test-autobahn.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autobahn-report
+          path: reports/autobahn
+          if-no-files-found: error
