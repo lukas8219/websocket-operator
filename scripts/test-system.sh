@@ -33,6 +33,13 @@ cleanup() {
   status=$?
   if (( status != 0 && created )); then
     kubectl get pods -A -o wide || true
+    # A restart kills kubectl port-forward. Preserve the terminated process's
+    # reason and logs; logs from its replacement cannot explain the failure.
+    kubectl get pods -n "$namespace" -o json | jq -c '
+      .items[] | .metadata.name as $pod | .status.containerStatuses[]? |
+      select(.lastState.terminated != null) |
+      {pod:$pod, container:.name, lastTermination:.lastState.terminated}' || true
+    kubectl logs -n "$namespace" "deployment/$loadbalancer" --previous --tail=100 || true
     kubectl logs -n "$controller_namespace" "deployment/$controller" --tail=60 || true
     kubectl logs "deployment/$loadbalancer" --tail=60 || true
     kubectl logs -l app=main-ws-server --all-containers --tail=40 --prefix || true
