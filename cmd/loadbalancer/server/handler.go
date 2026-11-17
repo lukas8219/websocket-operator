@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"lukas8219/websocket-operator/cmd/loadbalancer/connection"
 	"lukas8219/websocket-operator/internal/resolver"
+	"lukas8219/websocket-operator/internal/utils"
 	"net/http"
 	"os"
 
@@ -40,7 +41,7 @@ func handleConnection(rslv resolver.Resolver, connections *connectionRegistry, w
 			"x-ws-operator-upstream-host":  []string{host.Hostname()},
 		},
 	}
-	downstreamConn, _, _, err := upgrader.Upgrade(r, w)
+	downstreamConn, buffered, _, err := upgrader.Upgrade(r, w)
 
 	if err != nil {
 		slog.With("user", user).Error("Failed to upgrade HTTP connection", "error", err)
@@ -48,6 +49,7 @@ func handleConnection(rslv resolver.Resolver, connections *connectionRegistry, w
 		return
 	}
 
+	downstreamConn = utils.WithBufferedReader(downstreamConn, buffered.Reader)
 	proxiedConnection := connection.NewConnection(user, host.SocketAddres(), downstreamConn.RemoteAddr().String(), downstreamConn)
 	connections.store(proxiedConnection)
 
