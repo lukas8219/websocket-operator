@@ -66,7 +66,7 @@ func connect(t *testing.T, user string) *client {
 	t.Helper()
 	c := &client{user: user}
 	dialer := ws.Dialer{
-		Header: ws.HandshakeHeaderHTTP(http.Header{"Ws-User-Id": []string{user}}),
+		Header: ws.HandshakeHeaderHTTP(http.Header{http.CanonicalHeaderKey(endpoint(t, "WS_E2E_USER_HEADER")): []string{user}}),
 		OnHeader: func(key, value []byte) error {
 			if strings.EqualFold(string(key), "x-ws-operator-upstream-host") {
 				c.host = string(value)

@@ -39,7 +39,10 @@ for component in controller loadbalancer sidecar test-server; do
 done
 CERT_DIR="$system_tmp/certs" MANIFEST_DIR="$system_tmp/manifests" bash scripts/gen-certs.sh
 kubectl apply -f deployments/k8s/namespace.yaml
-kubectl apply -f deployments/k8s/configmap.yaml -f deployments/k8s/rbac.yaml
+export WS_E2E_USER_HEADER="${WS_OPERATOR_USER_HEADER:-ws-user-id}"
+kubectl create --dry-run=client -f deployments/k8s/configmap.yaml -o json |
+  jq --arg header "$WS_E2E_USER_HEADER" ' .data.WS_OPERATOR_USER_HEADER = $header' | kubectl apply -f -
+kubectl apply -f deployments/k8s/rbac.yaml
 kubectl apply -f "$system_tmp/manifests/tls-secrets-generated.yaml" -f deployments/k8s/service.yaml
 # Render only the development image/arguments overrides; preserve the shipped resources.
 kubectl create --dry-run=client -f deployments/k8s/deployment.yaml -o json |
