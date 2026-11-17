@@ -40,13 +40,7 @@ same transport, broker/vhost, discovery namespace, and discovery service.
 For an already injected Deployment named `chat`, create a Kubernetes Secret named
 `ws-lavinmq` with key `WS_OPERATOR_LAVINMQ_URL` containing its AMQP URL. Supply the
 value through your secret manager or a protected file; do not store it in the
-shared ConfigMap. Then update only the injected container:
-
-```sh
-kubectl set env deployment/chat --containers=websocket-proxy \
-  --from=secret/ws-lavinmq WS_OPERATOR_TRANSPORT_PLUGIN=lavinmq
-kubectl rollout status deployment/chat
-```
+shared ConfigMap.
 
 The updated injector supplies `WS_OPERATOR_POD_IP` from `status.podIP`. Existing
 injected containers need that downward-API environment variable added explicitly:
@@ -59,10 +53,18 @@ injected containers need that downward-API environment variable added explicitly
       fieldPath: status.podIP
 ```
 
+Once the Secret and pod-IP variable are in place, enable the injected container:
+
+```sh
+kubectl set env deployment/chat --containers=websocket-proxy \
+  --from=secret/ws-lavinmq WS_OPERATOR_TRANSPORT_PLUGIN=lavinmq
+kubectl rollout status deployment/chat
+```
+
 Manual sidecars need the same variable. Its IP and the sidecar listen port must
 match the discovery endpoint (normally port 3000). The queue prefix is
 `WS_OPERATOR_NAMESPACE.WS_OPERATOR_SERVICE`, using the existing discovery defaults.
-Roll out all replicas together: mixed HTTP/LavinMQ deployments can lose messages.
+Coordinate the restart of all replicas: mixed HTTP/LavinMQ pods can lose messages.
 Broker loss or a publish timeout exits the sidecar; Deployments restart it under
 `restartPolicy: Always`. Restart does not recover the temporary queue or retry
 uncertain messages. SIGTERM closes the broker connection as the server stops.
