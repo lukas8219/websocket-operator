@@ -60,3 +60,10 @@ bash scripts/test-system.sh your-test-command its-arguments
 
 This fixture checks deployment and injection. Message-delivery assertions are
 supplied by the command, so deployment readiness alone is not a routing test.
+
+Run the complete injection and message-delivery test with `make system-test`.
+It waits for three peers, selects two distinct recipients on the same and a
+separate pod, and verifies the demo application's exact reply through the load
+balancer. It also checks rejection of a missing routing identity. The `e2e` build
+tag keeps these tests separate from discovery-only and unit tests; running them
+without the fixture's endpoint variables fails instead of silently skipping.

@@ -32,5 +32,5 @@ jobs:
           version: v1.34.0
       - name: Install kind
         run: go install sigs.k8s.io/kind@v0.30.0
-      - name: Test deployment and injection
-        run: bash scripts/ci-check.sh bash scripts/test-system.sh
+      - name: Test injection and routed messages
+        run: bash scripts/ci-check.sh bash scripts/test-system.sh go test -tags=e2e -count=1 -timeout=3m -v ./integration_tests/system
