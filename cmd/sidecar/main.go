@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"io"
 	"log"
@@ -12,12 +11,12 @@ import (
 	"lukas8219/websocket-operator/internal/logger"
 	"lukas8219/websocket-operator/internal/peer_discovery"
 	"lukas8219/websocket-operator/internal/resolver"
+	"lukas8219/websocket-operator/internal/routing"
 	"lukas8219/websocket-operator/internal/transports"
 	"lukas8219/websocket-operator/internal/utils"
 	"net"
 	"net/http"
 	"os"
-	"reflect"
 	"sync"
 
 	"github.com/gobwas/ws"
@@ -48,13 +47,8 @@ func (c *ConnectionTracker) Debug(message string, args ...any) *ConnectionTracke
 	return c
 }
 
-var incomingMessageStruct = reflect.StructOf([]reflect.StructField{
-	{
-		Name: "RecipientId",
-		Type: reflect.TypeOf(json.RawMessage{}),
-		Tag:  reflect.StructTag(`json:"recipientId"`), //TODO extract this to a external configurable pkg
-	},
-})
+// Add compiled routing extensions here; selection happens before serving requests.
+var routingPlugins = map[string]routing.Extractor{}
 
 func main() {
 	port := flag.String("port", "3000", "Port to listen on")
@@ -66,6 +60,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("routing configuration: %v", err)
 	}
+	extractor, err := routing.Select(os.Getenv("WS_OPERATOR_ROUTING_PLUGIN"), routingPlugins)
+	if err != nil {
+		log.Fatalf("routing plugin: %v", err)
+	}
+
 	discovery, err := config.DiscoveryFromEnv()
 	if err != nil {
 		log.Fatalf("discovery configuration: %v", err)
@@ -162,7 +161,7 @@ func main() {
 		}
 
 		go proxySidecarServerToClient(closeConnections, connectionTracker)
-		go handleIncomingMessagesToProxy(connections, closeConnections, connectionTracker)
+		go handleIncomingMessagesToProxy(connections, closeConnections, connectionTracker, extractor)
 	}))
 }
 
@@ -191,7 +190,7 @@ func proxySidecarServerToClient(deferClose func(), connectionTracker *Connection
 }
 
 // TODO functions is doing too much. Split into smaller modules
-func handleIncomingMessagesToProxy(connections *connectionRegistry, deferClose func(), connectionTracker *ConnectionTracker) {
+func handleIncomingMessagesToProxy(connections *connectionRegistry, deferClose func(), connectionTracker *ConnectionTracker, extractor routing.Extractor) {
 	defer deferClose()
 	for {
 		msg, op, err := wsutil.ReadClientData(connectionTracker.downstreamConn)
@@ -200,28 +199,19 @@ func handleIncomingMessagesToProxy(connections *connectionRegistry, deferClose f
 			return
 		}
 
-		message := reflect.New(incomingMessageStruct).Interface()
-		err = json.Unmarshal(msg, message)
+		recipient, err := extractor.Extract(op, msg)
 		if err != nil {
-			connectionTracker.Error("Failed to unmarshal message", "error", err)
+			connectionTracker.Error("Failed to extract recipient", "error", err)
 			return
 		}
-		// Get the json.RawMessage as a byte slice
-		rawBytes := reflect.ValueOf(message).Elem().FieldByName("RecipientId").Interface().(json.RawMessage)
-
-		// If it's a JSON string (like "user123"), you need to unmarshal it
-		var recipientIdString string
-		if err := json.Unmarshal(rawBytes, &recipientIdString); err != nil {
-			connectionTracker.Error("Failed to unmarshal recipientId", "error", err)
-			return
-		}
+		recipientIdString := string(recipient)
 
 		recipientConnection := connections.get(recipientIdString)
 
 		slog.Debug("Message recipient", "recipientId", recipientIdString, "recipientConnection", recipientConnection)
 		if recipientConnection == nil {
 			slog.Debug("No recipient found in-memory. Routing message to the correct target.", "recipientId", recipientIdString)
-			err := connectionTracker.Write([]byte(recipientIdString), op, msg)
+			err := connectionTracker.Write(recipient, op, msg)
 			if err != nil {
 				connectionTracker.Error("Failed to route message", "error", err)
 			}
