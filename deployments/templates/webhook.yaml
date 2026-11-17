@@ -4,7 +4,7 @@ metadata:
   name: websocket-operator-webhook
 webhooks:
 - name: websocket.operator.io
-  sideEffects: None
+  sideEffects: NoneOnDryRun
   admissionReviewVersions: ["v1"]
   clientConfig:
     service:
