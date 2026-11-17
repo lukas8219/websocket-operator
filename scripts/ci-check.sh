@@ -6,10 +6,14 @@ trap 'rm -f "$check_log"' EXIT
 "$@" 2>&1 | tee "$check_log"
 status=${PIPESTATUS[0]}
 if (( status != 0 )) && [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-  while IFS= read -r line; do
-    line=${line//'%'/'%25'}
-    line=${line//$'\r'/'%0D'}
-    printf '::error::%s\n' "$line"
-  done < <(tail -60 "$check_log")
+  # Cleanup logs must not hide the earlier Go failure. Use one multiline
+  # annotation because Actions limits the number of annotations per step.
+  details=$(awk '/_test.go:[0-9]+|--- FAIL:|^FAIL|^Error:|^error:/ {print}' "$check_log" | head -40)
+  details+=$'\n'
+  details+=$(tail -30 "$check_log")
+  details=${details//'%'/'%25'}
+  details=${details//$'\r'/'%0D'}
+  details=${details//$'\n'/'%0A'}
+  printf '::error::%s\n' "$details"
 fi
 exit "$status"
