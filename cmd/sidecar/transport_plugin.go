@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/gobwas/ws"
-	"github.com/gobwas/ws/wsutil"
 	"lukas8219/websocket-operator/internal/transports"
 )
 
@@ -15,6 +14,6 @@ func localDelivery(connections *connectionRegistry) transports.Deliver {
 		if connection == nil {
 			return transports.ErrRecipientNotConnected
 		}
-		return wsutil.WriteClientMessage(connection.upstreamConn, op, payload)
+		return connection.deliverApplication(op, payload)
 	}
 }

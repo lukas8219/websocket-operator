@@ -24,6 +24,7 @@ import (
 )
 
 type ConnectionTracker struct {
+	applicationMu  sync.Mutex
 	user           string
 	upstreamHost   string
 	downstreamHost string
@@ -178,7 +179,7 @@ func proxySidecarServerToClient(deferClose func(), connectionTracker *Connection
 	defer deferClose()
 	for {
 		//Read as client - from the server.
-		msg, op, err := wsutil.ReadServerData(connectionTracker.upstreamConn)
+		msg, op, err := wsutil.ReadServerData(connectionTracker.applicationReader())
 		if err != nil {
 			connectionTracker.Error("Failed to read from server", "error", err)
 			return
@@ -227,7 +228,7 @@ func handleIncomingMessagesToProxy(connections *connectionRegistry, deferClose f
 			continue
 		}
 
-		err = wsutil.WriteClientMessage(recipientConnection.upstreamConn, op, msg)
+		err = recipientConnection.deliverApplication(op, msg)
 		if err != nil {
 			connectionTracker.Error("Failed to write to client", "error", err, "recipientId", recipientIdString)
 			return
