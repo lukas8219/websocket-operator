@@ -17,7 +17,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
@@ -85,18 +87,16 @@ func main() {
 	go resolver.Init()
 	connections := newConnectionRegistry()
 	deliver := localDelivery(connections)
+	transportPlugins["lavinmq"] = lavinMQFactory(net.JoinHostPort(os.Getenv("WS_OPERATOR_POD_IP"), *port), discovery)
 	transport, err := transports.Open(os.Getenv("WS_OPERATOR_TRANSPORT_PLUGIN"), transports.Options{
 		Resolver: resolver, UserHeader: userHeader, Deliver: deliver,
 	}, transportPlugins)
 	if err != nil {
 		log.Fatalf("transport plugin: %v", err)
 	}
-	if closer, ok := transport.(io.Closer); ok {
-		defer closer.Close()
-	}
 
 	slog.Info("Starting server", "port", *port)
-	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := &http.Server{Addr: "0.0.0.0:" + *port, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("Request received", "method", r.Method, "path", r.URL.Path)
 		if r.Method == http.MethodPost && r.URL.Path == "/message" {
 			userId := r.Header.Get(userHeader)
@@ -172,7 +172,12 @@ func main() {
 
 		go proxySidecarServerToClient(closeConnections, connectionTracker)
 		go handleIncomingMessagesToProxy(connections, closeConnections, connectionTracker, extractor)
-	}))
+	})}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := serveTransport(ctx, server, transport); err != nil && err != http.ErrServerClosed {
+		slog.Error("Sidecar server stopped", "error", err)
+	}
 }
 
 func proxySidecarServerToClient(deferClose func(), connectionTracker *ConnectionTracker) {

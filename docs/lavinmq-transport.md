@@ -1,8 +1,8 @@
 # LavinMQ transport contract
 
 LavinMQ is a compiled Go transport backend for #65, using AMQP 0-9-1 directly.
-HTTP remains the default. This package implements `Transport.Write`; sidecar
-registration and deployment configuration are added separately.
+HTTP remains the default. Select `WS_OPERATOR_TRANSPORT_PLUGIN=lavinmq` to
+use this backend through the same `Transport.Write` interface.
 
 Each sidecar owns one exclusive, non-durable queue named from a service prefix
 and the SHA-256 of its discovery socket address. All sidecars in the same service
@@ -30,3 +30,43 @@ message, which the broker might already have accepted. `Close` is idempotent;
 a local delivery already running may finish. Callbacks must bound their I/O.
 Use a dedicated least-privilege broker user/vhost and `amqps://` outside trusted
 networks; connection errors do not echo the credential-bearing URL.
+
+## Enable the plugin
+
+Use an image containing this change for both the controller and sidecar. Install
+LavinMQ separately; the operator does not provision it. All replicas must use the
+same transport, broker/vhost, discovery namespace, and discovery service.
+
+For an already injected Deployment named `chat`, create a Kubernetes Secret named
+`ws-lavinmq` with key `WS_OPERATOR_LAVINMQ_URL` containing its AMQP URL. Supply the
+value through your secret manager or a protected file; do not store it in the
+shared ConfigMap. Then update only the injected container:
+
+```sh
+kubectl set env deployment/chat --containers=websocket-proxy \
+  --from=secret/ws-lavinmq WS_OPERATOR_TRANSPORT_PLUGIN=lavinmq
+kubectl rollout status deployment/chat
+```
+
+The updated injector supplies `WS_OPERATOR_POD_IP` from `status.podIP`. Existing
+injected containers need that downward-API environment variable added explicitly:
+
+```yaml
+# Merge into spec.template.spec.containers[name=websocket-proxy].env
+- name: WS_OPERATOR_POD_IP
+  valueFrom:
+    fieldRef:
+      fieldPath: status.podIP
+```
+
+Manual sidecars need the same variable. Its IP and the sidecar listen port must
+match the discovery endpoint (normally port 3000). The queue prefix is
+`WS_OPERATOR_NAMESPACE.WS_OPERATOR_SERVICE`, using the existing discovery defaults.
+Roll out all replicas together: mixed HTTP/LavinMQ deployments can lose messages.
+Broker loss or a publish timeout exits the sidecar; Deployments restart it under
+`restartPolicy: Always`. Restart does not recover the temporary queue or retry
+uncertain messages. SIGTERM closes the broker connection as the server stops.
+
+Run broker-backed tests with `LAVINMQ_AMQP_URL=amqp://guest:guest@127.0.0.1:5672/`
+and `go test -race ./internal/transports/... ./cmd/sidecar`. CI starts a
+checksum-pinned LavinMQ 2.11.1 process and also exercises network failures.

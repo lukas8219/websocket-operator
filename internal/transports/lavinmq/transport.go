@@ -184,6 +184,9 @@ func (p *Transport) Write(recipient []byte, opcode ws.OpCode, payload []byte) er
 		return ErrUnavailable
 	default:
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// amqp091-go's PublishWithContext does not cancel blocked socket writes.
 	stop := context.AfterFunc(ctx, func() { p.Close() })
 	defer stop()

@@ -159,6 +159,9 @@ func TestBrokerOverflow(t *testing.T) {
 	rejected := false
 	for i := 0; i < 260; i++ {
 		if err := sender.Write([]byte("slow"), ws.OpBinary, nil); err != nil {
+			if err.Error() != "LavinMQ rejected publish" {
+				t.Fatal(err)
+			}
 			rejected = true
 			break
 		}
