@@ -8,3 +8,4 @@
 **/*-generated.yaml
 vendor/
 **/.DS_Store
+/reports/
