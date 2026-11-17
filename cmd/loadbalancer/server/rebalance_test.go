@@ -110,7 +110,7 @@ func TestHandleRebalanceLoop(t *testing.T) {
 		consistent_hashing.NewJumpHash(memoryDiscoveryBackend),
 	)
 	go mockResolver.Init()
-	connections := make(map[string]*connection.Connection)
+	connections := newConnectionRegistry()
 
 	go handleRebalanceLoop(mockResolver, connections)
 
@@ -124,7 +124,7 @@ func TestHandleRebalanceLoop(t *testing.T) {
 		mockWSDialer := &MockWSDialer{}
 		mockConn := NewMockConnection("user1", "old-host:3000", mockDownstreamConn, mockWSDialer)
 		go mockConn.Handle()
-		connections[mockConn.Tracker.User()] = mockConn
+		connections.store(mockConn)
 
 		mockConn.Tracker.UpstreamCancelChan() <- 1
 		time.Sleep(100 * time.Millisecond)
