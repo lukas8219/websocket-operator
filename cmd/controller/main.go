@@ -25,9 +25,10 @@ import (
 )
 
 var (
-	port       int
-	certDir    string
-	tlsEnabled bool
+	port         int
+	certDir      string
+	tlsEnabled   bool
+	sidecarImage string
 )
 
 const (
@@ -38,20 +39,27 @@ func init() {
 	flag.IntVar(&port, "port", 8080, "The port for the webhook server to listen on.")
 	flag.StringVar(&certDir, "cert-dir", "/etc/webhook/certs", "The directory containing the TLS certificates.")
 	flag.BoolVar(&tlsEnabled, "tls-enabled", true, "Whether to enable TLS. Set to false for development only.")
-	flag.Parse()
+	flag.StringVar(&sidecarImage, "sidecar-image", "docker.io/lukas8219/websocket-operator-sidecar:latest", "Image injected into application pods.")
 }
 
 // SidecarInjector handles admission webhook requests
 type SidecarInjector struct {
-	decoder runtime.Decoder
+	decoder      runtime.Decoder
+	client       kubernetes.Interface
+	sidecarImage string
 }
 
 // NewSidecarInjector creates a new SidecarInjector
-func NewSidecarInjector() *SidecarInjector {
+func NewSidecarInjector(client kubernetes.Interface, image string) *SidecarInjector {
 	runtimeScheme := runtime.NewScheme()
+	if err := admissionv1.AddToScheme(runtimeScheme); err != nil {
+		panic(err)
+	}
 	codecs := serializer.NewCodecFactory(runtimeScheme)
 	return &SidecarInjector{
-		decoder: codecs.UniversalDeserializer(),
+		decoder:      codecs.UniversalDeserializer(),
+		client:       client,
+		sidecarImage: image,
 	}
 }
 
@@ -190,33 +198,11 @@ func (si *SidecarInjector) mutate(ar *admissionv1.AdmissionReview) *admissionv1.
 		},
 	}
 
-	// Get Kubernetes client
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		log.Printf("Failed to get cluster config: %v", err)
-		return &admissionv1.AdmissionResponse{
-			UID:     req.UID,
-			Allowed: false,
-			Result: &metav1.Status{
-				Message: err.Error(),
-			},
-		}
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		log.Printf("Failed to create clientset: %v", err)
-		return &admissionv1.AdmissionResponse{
-			UID:     req.UID,
-			Allowed: false,
-			Result: &metav1.Status{
-				Message: err.Error(),
-			},
-		}
-	}
-
 	// Create the service
-	_, err = clientset.CoreV1().Services(deployment.Namespace).Create(context.Background(), headlessService, metav1.CreateOptions{})
+	var err error
+	if req.DryRun == nil || !*req.DryRun {
+		_, err = si.client.CoreV1().Services(deployment.Namespace).Create(context.Background(), headlessService, metav1.CreateOptions{})
+	}
 	if err != nil && !errors.IsAlreadyExists(err) {
 		failHeadlessCreationError := fmt.Errorf("Failed to create headless service: %w", err)
 		log.Printf("Failed to create headless service: %v", failHeadlessCreationError)
@@ -230,7 +216,7 @@ func (si *SidecarInjector) mutate(ar *admissionv1.AdmissionReview) *admissionv1.
 	}
 
 	log.Printf("Injecting sidecar to deployment %s/%s", deployment.Namespace, deployment.Name)
-	patch, err := createPatch(&deployment)
+	patch, err := createPatch(&deployment, si.sidecarImage)
 	if err != nil {
 		log.Printf("Failed to create patch: %v", err)
 		return &admissionv1.AdmissionResponse{
@@ -254,13 +240,13 @@ func (si *SidecarInjector) mutate(ar *admissionv1.AdmissionReview) *admissionv1.
 }
 
 // createPatch creates a JSON patch to add the sidecar container
-func createPatch(deployment *appsv1.Deployment) ([]byte, error) {
+func createPatch(deployment *appsv1.Deployment, image string) ([]byte, error) {
 	var patches []map[string]interface{}
 
 	// Add sidecar container
 	sidecarContainer := corev1.Container{
 		Name:  "websocket-proxy",
-		Image: "docker.io/lukas8219/websocket-operator-sidecar:latest", // Adjust image as needed
+		Image: image,
 		Ports: []corev1.ContainerPort{
 			{
 				ContainerPort: 3000,
@@ -316,10 +302,19 @@ func getKeyPairFiles() (string, string, error) {
 }
 
 func main() {
+	flag.Parse()
 	log.Println("Starting webhook server")
 
 	// Create the webhook server
-	injector := NewSidecarInjector()
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		log.Fatalf("load Kubernetes configuration: %v", err)
+	}
+	client, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		log.Fatalf("create Kubernetes client: %v", err)
+	}
+	injector := NewSidecarInjector(client, sidecarImage)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mutate", injector.sidecarInjectionHandler)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

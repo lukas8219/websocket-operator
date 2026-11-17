@@ -22,7 +22,8 @@ entry point is `scripts/build.sh`, invoked by the Makefile.
 
 Use a dedicated Kubernetes cluster. The example manifests reference
 `docker.io/lukas8219/websocket-operator-{controller,loadbalancer}:latest`; the
-controller injects `docker.io/lukas8219/websocket-operator-sidecar:latest`.
+controller injects `docker.io/lukas8219/websocket-operator-sidecar:latest` by default.
+Set its `-sidecar-image` flag to inject the version you built.
 Check that those images contain the revision you intend to run. Building an image
 locally does not publish it or make it available to cluster nodes.
 
