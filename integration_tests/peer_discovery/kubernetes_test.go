@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/retry"
 	"lukas8219/websocket-operator/internal/peer_discovery"
 	"lukas8219/websocket-operator/internal/utils"
 )
@@ -111,14 +112,20 @@ func TestShouldHaveCorrectNumberOfHostsAfterReconcile(t *testing.T) {
 	}()
 	for _, desired := range []int32{1, 5, 8, 4, 10, 0} {
 		if !t.Run(fmt.Sprintf("replicas_%d", desired), func(t *testing.T) {
-			scale, err := client.AppsV1().Deployments(ns.Name).GetScale(ctx, deployment.Name, metav1.GetOptions{})
+			// Deployment status updates can change resourceVersion between read and write.
+			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				scale, err := client.AppsV1().Deployments(ns.Name).GetScale(ctx, deployment.Name, metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				scale.Spec.Replicas = desired
+				_, err = client.AppsV1().Deployments(ns.Name).UpdateScale(ctx, deployment.Name, scale, metav1.UpdateOptions{})
+				return err
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			scale.Spec.Replicas = desired
-			if _, err = client.AppsV1().Deployments(ns.Name).UpdateScale(ctx, deployment.Name, scale, metav1.UpdateOptions{}); err != nil {
-				t.Fatal(err)
-			}
+
 			var observed string
 			err = wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 90*time.Second, true, func(ctx context.Context) (bool, error) {
 				current, err := client.AppsV1().Deployments(ns.Name).Get(ctx, deployment.Name, metav1.GetOptions{})
