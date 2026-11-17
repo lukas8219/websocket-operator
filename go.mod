@@ -9,6 +9,7 @@ require (
 	github.com/gobwas/ws v1.4.0
 	github.com/hashicorp/go-set/v3 v3.0.1
 	github.com/lithammer/go-jump-consistent-hash v1.0.2
+	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/zeebo/xxh3 v1.0.2
 	golang.org/x/net v0.38.0
 	k8s.io/api v0.34.1
