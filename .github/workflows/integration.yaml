@@ -16,6 +16,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: integration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   peer-discovery:
     runs-on: ubuntu-latest
@@ -33,7 +37,7 @@ jobs:
           kind create cluster --name websocket-tests --image kindest/node:v1.34.0 \
             --kubeconfig "$RUNNER_TEMP/websocket-tests.kubeconfig" --wait 120s
       - name: Test peer discovery against Kubernetes
-        run: KUBECONFIG="$RUNNER_TEMP/websocket-tests.kubeconfig" make integration
+        run: KUBECONFIG="$RUNNER_TEMP/websocket-tests.kubeconfig" bash scripts/ci-check.sh make integration
       - name: Collect cluster logs on failure
         if: failure()
         continue-on-error: true
