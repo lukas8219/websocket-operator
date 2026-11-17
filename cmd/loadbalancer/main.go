@@ -21,6 +21,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("routing configuration: %v", err)
 	}
+	discovery, err := config.DiscoveryFromEnv()
+	if err != nil {
+		log.Fatalf("discovery configuration: %v", err)
+	}
 	logger.SetupLogger(*debug)
 	client, err := utils.NewKubernetesClient()
 	if err != nil {
@@ -28,8 +32,8 @@ func main() {
 	}
 	peerDiscovery := peer_discovery.NewKubernetes(peer_discovery.KubernetesPeerDiscoveryOptions{
 		Clientset: client,
-		Namespace: "default",
-		Service:   "ws-proxy-headless",
+		Namespace: discovery.Namespace,
+		Service:   discovery.Service,
 	})
 	resolver := resolver.New(
 		peerDiscovery,

@@ -49,7 +49,10 @@ func TestAdmissionInjectionAndDryRun(t *testing.T) {
 			req := httptest.NewRequest("POST", "/mutate", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
-			NewSidecarInjector(client, "example/sidecar:revision").sidecarInjectionHandler(response, req)
+			injector := NewSidecarInjector(client, "example/sidecar:revision")
+			injector.configMapName = "chat-config"
+			injector.serviceName = "chat-peers"
+			injector.sidecarInjectionHandler(response, req)
 			if response.Code != 200 {
 				t.Fatalf("HTTP %d: %s", response.Code, response.Body.String())
 			}
@@ -72,6 +75,9 @@ func TestAdmissionInjectionAndDryRun(t *testing.T) {
 				if len(patch) != 1 || patch[0].Path != "/spec/template/spec/containers/-" || patch[0].Value.Image != "example/sidecar:revision" {
 					t.Fatalf("patch: %+v", patch)
 				}
+				if patch[0].Value.EnvFrom[0].ConfigMapRef.Name != "chat-config" {
+					t.Fatal("injection ignored configured ConfigMap")
+				}
 			} else if len(result.Response.Patch) != 0 {
 				t.Fatal("unexpected injection patch")
 			}
@@ -82,6 +88,9 @@ func TestAdmissionInjectionAndDryRun(t *testing.T) {
 			want := 0
 			if inject && !tc.dryRun {
 				want = 1
+			}
+			if want == 1 && (len(services.Items) != 1 || services.Items[0].Name != "chat-peers") {
+				t.Fatal("injection ignored configured discovery Service")
 			}
 			if len(services.Items) != want {
 				t.Fatalf("services=%d, want %d", len(services.Items), want)
