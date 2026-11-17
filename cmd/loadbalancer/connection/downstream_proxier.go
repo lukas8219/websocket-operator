@@ -2,6 +2,7 @@ package connection
 
 import (
 	"context"
+	"lukas8219/websocket-operator/internal/utils"
 	"net"
 
 	"github.com/gobwas/ws"
@@ -16,11 +17,12 @@ func (p *WSProxier) ProxyDownstreamToUpstream() (net.Conn, error) {
 	upstreamCancelChan := p.tracker.UpstreamCancelChan()
 	downstreamConn := p.tracker.DownstreamConn()
 
-	proxiedConn, _, _, err := p.Dial(context.Background(), "ws://"+host)
+	proxiedConn, reader, _, err := p.Dial(context.Background(), "ws://"+host)
 	if err != nil {
 		p.tracker.Error("Failed to dial upstream", "error", err)
 		return nil, err
 	}
+	proxiedConn = utils.WithBufferedReader(proxiedConn, reader)
 	p.tracker.Debug("Connected to upstream")
 
 	waitSignal := func() {

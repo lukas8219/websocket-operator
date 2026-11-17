@@ -119,19 +119,21 @@ func main() {
 		slog := slog.With("recipientId", user)
 		w.Header().Set("x-ws-operator-instance", os.Getenv("HOSTNAME"))
 		slog.Debug("Dialing proxied connection")
-		proxiedConn, _, _, err := ws.Dial(context.Background(), "ws://localhost:"+*targetPort)
+		proxiedConn, upstreamReader, _, err := ws.Dial(context.Background(), "ws://localhost:"+*targetPort)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			slog.Error("Failed to establish upstream connection", "error", err)
 			return
 		}
+		proxiedConn = utils.WithBufferedReader(proxiedConn, upstreamReader)
 		slog.Debug("Connection established")
 		slog.Debug("Upgrading HTTP connection")
-		clientConn, _, _, err := ws.UpgradeHTTP(r, w)
+		clientConn, buffered, _, err := ws.UpgradeHTTP(r, w)
 		if err != nil {
 			slog.Error("Failed to upgrade HTTP connection", "error", err)
 			return
 		}
+		clientConn = utils.WithBufferedReader(clientConn, buffered.Reader)
 		connectionTracker := &ConnectionTracker{
 			user:           user,
 			upstreamHost:   "localhost:" + *targetPort,
