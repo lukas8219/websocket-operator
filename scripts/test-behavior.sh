@@ -30,6 +30,7 @@ done <<'TARGETS'
 ./internal/peer_discovery FuzzKubernetesPeerSnapshots
 ./internal/transports FuzzHTTPTransportEnvelope
 ./internal/transports FuzzHTTPTransportResponseStatus
+./cmd/sidecar FuzzSidecarMessageBody
 TARGETS
 printf 'Results: %s\n' "$behavior_logs"
 exit "$behavior_failed"

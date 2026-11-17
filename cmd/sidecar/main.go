@@ -95,6 +95,11 @@ func main() {
 				return
 			}
 
+			if len(body) == 0 {
+				http.Error(w, "message body must include an opcode", http.StatusBadRequest)
+				return
+			}
+
 			opCode := ws.OpCode(body[0])
 			message := body[1:]
 			slog.Debug("Writing message to client", "userId", userId, "opCode", opCode, "message", string(message))
