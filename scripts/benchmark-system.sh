@@ -25,3 +25,10 @@ done
 export WS_E2E_DIRECT_URL="ws://127.0.0.1:$port"
 go test -tags=e2e -run '^$' -bench BenchmarkSystemRoundTrip -benchmem \
   -benchtime=1s -count=3 -timeout=5m ./integration_tests/system | tee "$output/round-trip.txt"
+
+if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+  metrics=$(awk '/^BenchmarkSystemRoundTrip/ {print}' "$output/round-trip.txt")
+  metrics=${metrics//'%'/'%25'}
+  metrics=${metrics//$'\n'/'%0A'}
+  printf '::notice title=System benchmark samples::%s\n' "$metrics"
+fi
