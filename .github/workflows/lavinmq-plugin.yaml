@@ -1,0 +1,38 @@
+name: LavinMQ plugin
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['internal/transports/**', 'cmd/sidecar/**', '.github/workflows/lavinmq-plugin.yaml', 'go.mod', 'go.sum']
+permissions:
+  contents: read
+concurrency:
+  group: lavinmq-plugin-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  broker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test against LavinMQ 2.11.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports/lavinmq-plugin
+          curl -fsSL https://github.com/cloudamqp/lavinmq/releases/download/v2.11.1/lavinmq-2.11.1-linux-amd64.tar.gz -o "$RUNNER_TEMP/lavinmq.tar.gz"
+          echo "5a84fde689bda864bf27899155d102bb09b582dd6f2e6f5c517b044faf51286a  $RUNNER_TEMP/lavinmq.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/lavinmq.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/lavinmq-2.11.1-linux-amd64/lavinmq" -D "$RUNNER_TEMP/lavinmq-data" --mqtt-port=-1 --metrics-http-port=-1 > reports/lavinmq-plugin/broker.log 2>&1 &
+          broker_pid=$!
+          trap 'kill "$broker_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..50}; do nc -z 127.0.0.1 5672 && break; sleep 0.2; done
+          LAVINMQ_AMQP_URL=amqp://guest:guest@127.0.0.1:5672/ go test -race -count=3 -timeout=90s ./internal/transports/... ./cmd/sidecar | tee reports/lavinmq-plugin/tests.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lavinmq-plugin
+          path: reports/lavinmq-plugin
+          if-no-files-found: error
