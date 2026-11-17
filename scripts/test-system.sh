@@ -8,14 +8,33 @@ system_tmp=$(mktemp -d)
 cluster="websocket-e2e-$$"
 image_tag="e2e-$(git rev-parse --short HEAD)"
 export KUBECONFIG="$system_tmp/kubeconfig"
+install_mode="${WS_E2E_INSTALL:-manifests}"
+namespace=default
+controller_namespace=websocket-system
+controller=websocket-operator-controller
+loadbalancer=websocket-operator-loadbalancer
+application_account=loadbalancer-sa
+case "$install_mode" in
+  manifests) ;;
+  helm)
+    command -v helm >/dev/null
+    namespace=websocket-chart
+    controller_namespace="$namespace"
+    controller=chat-ws-ctrl
+    loadbalancer=chat-ws-lb
+    application_account=default ;;
+  *) echo "Unknown install mode: $install_mode" >&2; exit 1 ;;
+esac
+export WS_E2E_NAMESPACE="$namespace"
+export WS_E2E_USER_HEADER="${WS_OPERATOR_USER_HEADER:-ws-user-id}"
 created=0
 forward_pid=
 cleanup() {
   status=$?
   if (( status != 0 && created )); then
     kubectl get pods -A -o wide || true
-    kubectl logs -n websocket-system deployment/websocket-operator-controller --tail=60 || true
-    kubectl logs deployment/websocket-operator-loadbalancer --tail=60 || true
+    kubectl logs -n "$controller_namespace" "deployment/$controller" --tail=60 || true
+    kubectl logs "deployment/$loadbalancer" --tail=60 || true
     kubectl logs -l app=main-ws-server --all-containers --tail=40 --prefix || true
   fi
   if [[ -n "$forward_pid" ]]; then kill "$forward_pid" 2>/dev/null || true; wait "$forward_pid" 2>/dev/null || true; fi
@@ -37,9 +56,12 @@ created=1
 for component in controller loadbalancer sidecar test-server; do
   kind load docker-image --name "$cluster" "websocket-operator-$component:$image_tag"
 done
+kubectl config set-context --current --namespace="$namespace"
+if [[ "$install_mode" == helm ]]; then
+  source scripts/install-system-helm.sh
+else
 CERT_DIR="$system_tmp/certs" MANIFEST_DIR="$system_tmp/manifests" bash scripts/gen-certs.sh
 kubectl apply -f deployments/k8s/namespace.yaml
-export WS_E2E_USER_HEADER="${WS_OPERATOR_USER_HEADER:-ws-user-id}"
 kubectl create --dry-run=client -f deployments/k8s/configmap.yaml -o json |
   jq --arg header "$WS_E2E_USER_HEADER" ' .data.WS_OPERATOR_USER_HEADER = $header' | kubectl apply -f -
 kubectl apply -f deployments/k8s/rbac.yaml
@@ -57,8 +79,11 @@ kubectl create --dry-run=client -f deployments/k8s/deployment.yaml -o json |
 kubectl -n websocket-system rollout status deployment/websocket-operator-controller --timeout=120s
 kubectl rollout status deployment/websocket-operator-loadbalancer --timeout=120s
 kubectl apply -f "$system_tmp/manifests/webhook-generated.yaml"
+fi
 kubectl create --dry-run=client -f deployments/k8s/target-deploy.yaml -o json |
-  jq --arg image "websocket-operator-test-server:$image_tag" '
+  jq --arg image "websocket-operator-test-server:$image_tag" --arg namespace "$namespace" --arg account "$application_account" '
+    .metadata.namespace = $namespace |
+    .spec.template.spec.serviceAccountName = $account |
     .spec.replicas = 3 |
     .spec.template.spec.containers[0] |= (
       .image = $image | .imagePullPolicy = "IfNotPresent" |
@@ -66,7 +91,7 @@ kubectl create --dry-run=client -f deployments/k8s/target-deploy.yaml -o json |
 kubectl rollout status deployment/main-ws-server --timeout=180s
 kubectl get deployment main-ws-server -o json | jq -e --arg image "websocket-operator-sidecar:$image_tag" '
   [.spec.template.spec.containers[] | select(.name == "websocket-proxy" and .image == $image)] | length == 1'
-kubectl port-forward deployment/websocket-operator-loadbalancer --address=127.0.0.1 0:8080 0:8081 > "$system_tmp/ports.log" 2>&1 &
+kubectl port-forward "deployment/$loadbalancer" --address=127.0.0.1 0:8080 0:8081 > "$system_tmp/ports.log" 2>&1 &
 forward_pid=$!
 deadline=$((SECONDS + 30))
 while (( SECONDS < deadline )); do
@@ -82,3 +107,11 @@ export WS_E2E_URL="ws://127.0.0.1:$ws_port"
 export WS_E2E_HOSTS_URL="http://127.0.0.1:$hosts_port"
 printf 'Injected deployment ready; WebSocket endpoint: %s\n' "$WS_E2E_URL"
 if (( $# )); then "$@"; fi
+
+if [[ "$install_mode" == helm ]]; then
+  kubectl delete deployment main-ws-server --wait=true
+  helm uninstall chat --namespace "$namespace" --wait --timeout 2m
+  [[ -z "$(kubectl get service chat-ws-peers --ignore-not-found -o name)" ]]
+  [[ -z "$(kubectl get secret chat-ws-tls --ignore-not-found -o name)" ]]
+  [[ -z "$(kubectl get mutatingwebhookconfiguration "chat-ws-$namespace" --ignore-not-found -o name)" ]]
+fi

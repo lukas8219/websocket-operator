@@ -34,7 +34,7 @@ func scaleApplication(t *testing.T, count int) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "kubectl", "--context", "kind-"+cluster, "scale", "deployment/main-ws-server", fmt.Sprintf("--replicas=%d", count))
+	command := exec.CommandContext(ctx, "kubectl", "--context", "kind-"+cluster, "--namespace", endpoint(t, "WS_E2E_NAMESPACE"), "scale", "deployment/main-ws-server", fmt.Sprintf("--replicas=%d", count))
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("scale application: %v\n%s", err, output)
 	}
