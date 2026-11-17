@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/benchmarks.yaml'
       - 'internal/**'
+      - 'cmd/loadbalancer/**'
       - 'integration_tests/benchmarks/**'
       - 'scripts/benchmark.sh'
       - 'go.mod'

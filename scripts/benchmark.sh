@@ -13,6 +13,8 @@ mkdir -p "$output"
 } > "$output/environment.txt"
 go test -run '^$' -bench BenchmarkRouting -benchmem -benchtime=1s -count=5 \
   ./integration_tests/benchmarks | tee "$output/routing.txt"
+go test -run '^$' -bench BenchmarkRegistryComparison -benchmem -benchtime=300ms -count=3 \
+  ./cmd/loadbalancer/server | tee "$output/registry.txt"
 go test -run '^$' -bench 'BenchmarkRouting/hash/peers=64$' -benchtime=2s \
   -cpuprofile "$output/cpu.pprof" -memprofile "$output/heap.pprof" \
   -o "$output/benchmarks.test" ./integration_tests/benchmarks > "$output/profile.txt"
