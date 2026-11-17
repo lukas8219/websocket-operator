@@ -34,6 +34,7 @@ spec:
           volumeMounts:
             - {name: tls, mountPath: /etc/webhook/certs, readOnly: true}
           {{- else }}
+          command: ["./loadbalancer"]
           args: ["--debug=false"]
           envFrom:
             - configMapRef: {name: {{ $n }}-config}
