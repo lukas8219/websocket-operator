@@ -1,0 +1,19 @@
+# Build and publish all three images from the same reviewed revision.
+images:
+  controller: docker.io/lukas8219/websocket-operator-controller
+  loadbalancer: docker.io/lukas8219/websocket-operator-loadbalancer
+  sidecar: docker.io/lukas8219/websocket-operator-sidecar
+  tag: latest
+  pullPolicy: IfNotPresent
+userHeader: ws-user-id
+application:
+  # One application Deployment/routing pool per release namespace.
+  selector: {app: main-ws-server}
+  serviceAccount: default
+resources:
+  controller:
+    requests: {cpu: 100m, memory: 50Mi}
+    limits: {cpu: 200m, memory: 100Mi}
+  loadbalancer:
+    requests: {cpu: 100m, memory: 50Mi}
+    limits: {cpu: 200m, memory: 100Mi}

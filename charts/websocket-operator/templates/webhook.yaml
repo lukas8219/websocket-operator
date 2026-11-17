@@ -1,0 +1,52 @@
+{{- $n := printf "%s-ws" .Release.Name }}
+{{- $secret := lookup "v1" "Secret" .Release.Namespace (printf "%s-tls" $n) }}
+{{- $data := dict }}
+{{- if $secret }}
+{{- $data = $secret.data }}
+{{- else }}
+{{- $ca := genCA (printf "%s-ca" $n) 365 }}
+{{- $dns := printf "%s-ctrl.%s.svc" $n .Release.Namespace }}
+{{- $cert := genSignedCert $dns nil (list $dns (printf "%s.cluster.local" $dns)) 365 $ca }}
+{{- $data = dict "ca.crt" ($ca.Cert | b64enc) "tls.crt" ($cert.Cert | b64enc) "tls.key" ($cert.Key | b64enc) }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $n }}-tls
+type: kubernetes.io/tls
+data: {{ $data | toJson }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $n }}-ctrl
+spec:
+  selector: {app: {{ $n }}-ctrl}
+  ports: [{port: 443, targetPort: 8080}]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ $n }}-{{ .Release.Namespace }}
+webhooks:
+  - name: deployments.ws.operator
+    admissionReviewVersions: [v1]
+    sideEffects: NoneOnDryRun
+    failurePolicy: Fail
+    timeoutSeconds: 10
+    namespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: {{ .Release.Namespace }}}
+    objectSelector:
+      matchLabels: {ws.operator/enabled: "true"}
+    rules:
+      - operations: [CREATE, UPDATE]
+        apiGroups: [apps]
+        apiVersions: [v1]
+        resources: [deployments]
+        scope: Namespaced
+    clientConfig:
+      caBundle: {{ index $data "ca.crt" | quote }}
+      service:
+        name: {{ $n }}-ctrl
+        namespace: {{ .Release.Namespace }}
+        path: /mutate

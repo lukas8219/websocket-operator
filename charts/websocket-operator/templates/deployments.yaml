@@ -1,0 +1,53 @@
+{{- $root := . }}
+{{- $n := printf "%s-ws" .Release.Name }}
+{{- range $component, $short := dict "controller" "ctrl" "loadbalancer" "lb" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $n }}-{{ $short }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: {{ $n }}-{{ $short }}}
+  template:
+    metadata:
+      labels: {app: {{ $n }}-{{ $short }}}
+      annotations:
+        checksum/config: {{ $root.Values | toJson | sha256sum }}
+    spec:
+      serviceAccountName: {{ $n }}-{{ $short }}
+      containers:
+        - name: {{ $component }}
+          image: {{ printf "%s:%s" (index $root.Values.images $component) $root.Values.images.tag | quote }}
+          imagePullPolicy: {{ $root.Values.images.pullPolicy }}
+          resources: {{ index $root.Values.resources $component | toJson }}
+          ports: [{containerPort: 8080}]
+          {{- if eq $component "controller" }}
+          args:
+            - --cert-dir=/etc/webhook/certs
+            - --sidecar-image={{ $root.Values.images.sidecar }}:{{ $root.Values.images.tag }}
+            - --service-name={{ $n }}-peers
+            - --config-map={{ $n }}-config
+          readinessProbe:
+            httpGet: {path: /health, port: 8080, scheme: HTTPS}
+          volumeMounts:
+            - {name: tls, mountPath: /etc/webhook/certs, readOnly: true}
+          {{- else }}
+          command: ["./loadbalancer"]
+          args: ["--debug=false"]
+          envFrom:
+            - configMapRef: {name: {{ $n }}-config}
+          readinessProbe:
+            tcpSocket: {port: 8080}
+          {{- end }}
+      {{- if eq $component "controller" }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ $n }}-tls
+            items:
+              - {key: tls.crt, path: server.crt}
+              - {key: tls.key, path: server.key}
+      {{- end }}
+{{- end }}
