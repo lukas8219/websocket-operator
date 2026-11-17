@@ -35,24 +35,28 @@ func TestLavinMQPluginToApplication(t *testing.T) {
 		t.Skip("set LAVINMQ_AMQP_URL for real-broker tests")
 	}
 	t.Setenv("WS_OPERATOR_LAVINMQ_URL", url)
-	factory := lavinMQFactory("127.0.0.1:3000", config.Discovery{Namespace: strings.Repeat("n", 63), Service: strings.Repeat("s", 46) + time.Now().Format("150405.000000000")})
-	registry := newConnectionRegistry()
-	local, app := net.Pipe()
-	defer local.Close()
-	defer app.Close()
-	app.SetDeadline(time.Now().Add(3 * time.Second))
-	registry.register(&ConnectionTracker{user: "recipient", upstreamConn: local})
-	backend, err := transports.Open("lavinmq", transports.Options{Resolver: pluginResolver{}, Deliver: localDelivery(registry)}, map[string]transports.Factory{"lavinmq": factory})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer backend.(interface{ Close() error }).Close()
-	if err := backend.Write([]byte("recipient"), ws.OpText, []byte("through broker")); err != nil {
-		t.Fatal(err)
-	}
-	body, op, err := wsutil.ReadClientData(app)
-	if err != nil || op != ws.OpText || string(body) != "through broker" {
-		t.Fatalf("%q/%v: %v", body, op, err)
+	for _, namespace := range []string{"amq", strings.Repeat("n", 63)} {
+		t.Run(namespace, func(t *testing.T) {
+			factory := lavinMQFactory("127.0.0.1:3000", config.Discovery{Namespace: namespace, Service: strings.Repeat("s", 46) + fmt.Sprintf("%016x", time.Now().UnixNano())})
+			registry := newConnectionRegistry()
+			local, app := net.Pipe()
+			defer local.Close()
+			defer app.Close()
+			app.SetDeadline(time.Now().Add(3 * time.Second))
+			registry.register(&ConnectionTracker{user: "recipient", upstreamConn: local})
+			backend, err := transports.Open("lavinmq", transports.Options{Resolver: pluginResolver{}, Deliver: localDelivery(registry)}, map[string]transports.Factory{"lavinmq": factory})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer backend.(interface{ Close() error }).Close()
+			if err := backend.Write([]byte("recipient"), ws.OpText, []byte("through broker")); err != nil {
+				t.Fatal(err)
+			}
+			body, op, err := wsutil.ReadClientData(app)
+			if err != nil || op != ws.OpText || string(body) != "through broker" {
+				t.Fatalf("%q/%v: %v", body, op, err)
+			}
+		})
 	}
 }
 
@@ -119,7 +123,7 @@ func TestLavinMQSelectedBySidecarProcess(t *testing.T) {
 	}
 	host, port, _ := net.SplitHostPort(fixture.url)
 	number, _ := strconv.Atoi(port)
-	sender, err := lavinmq.New(lavinmq.Config{URL: url, Address: "127.0.0.1:1", Prefix: "test." + service,
+	sender, err := lavinmq.New(lavinmq.Config{URL: url, Address: "127.0.0.1:1", Prefix: "ws-operator.test." + service,
 		Lookup:  func([]byte) (peer_discovery.Peer, error) { return peer_discovery.NewPeer(host, uint16(number)), nil },
 		Deliver: func([]byte, ws.OpCode, []byte) error { return nil },
 	})

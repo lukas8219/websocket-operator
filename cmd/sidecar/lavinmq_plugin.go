@@ -22,7 +22,7 @@ func lavinMQFactory(address string, discovery config.Discovery) transports.Facto
 		}
 		return lavinmq.New(lavinmq.Config{
 			URL: os.Getenv("WS_OPERATOR_LAVINMQ_URL"), Address: address,
-			Prefix: discovery.Namespace + "." + discovery.Service,
+			Prefix: "ws-operator." + discovery.Namespace + "." + discovery.Service,
 			Lookup: options.Resolver.Lookup, Deliver: options.Deliver,
 		})
 	}

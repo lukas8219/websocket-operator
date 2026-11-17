@@ -63,7 +63,7 @@ kubectl rollout status deployment/chat
 
 Manual sidecars need the same variable. Its IP and the sidecar listen port must
 match the discovery endpoint (normally port 3000). The queue prefix is
-`WS_OPERATOR_NAMESPACE.WS_OPERATOR_SERVICE`, using the existing discovery defaults.
+`ws-operator.<namespace>.<service>`, using the existing discovery configuration.
 Coordinate the restart of all replicas: mixed HTTP/LavinMQ pods can lose messages.
 Broker loss or a publish timeout exits the sidecar; Deployments restart it under
 `restartPolicy: Always`. Restart does not recover the temporary queue or retry
