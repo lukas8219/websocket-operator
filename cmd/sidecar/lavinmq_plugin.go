@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"lukas8219/websocket-operator/internal/config"
 	"lukas8219/websocket-operator/internal/transports"
@@ -49,4 +51,13 @@ func serveTransport(ctx context.Context, server *http.Server, transport transpor
 		server.Close()
 	}()
 	return server.ListenAndServe()
+}
+
+func serveSidecar(address string, transport transports.Transport, handler http.Handler) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	server := &http.Server{Addr: address, Handler: handler}
+	if err := serveTransport(ctx, server, transport); err != nil && err != http.ErrServerClosed {
+		slog.Error("Sidecar server stopped", "error", err)
+	}
 }

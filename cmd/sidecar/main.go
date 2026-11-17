@@ -17,9 +17,7 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
@@ -96,7 +94,7 @@ func main() {
 	}
 
 	slog.Info("Starting server", "port", *port)
-	server := &http.Server{Addr: "0.0.0.0:" + *port, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	serveSidecar("0.0.0.0:"+*port, transport, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("Request received", "method", r.Method, "path", r.URL.Path)
 		if r.Method == http.MethodPost && r.URL.Path == "/message" {
 			userId := r.Header.Get(userHeader)
@@ -172,12 +170,7 @@ func main() {
 
 		go proxySidecarServerToClient(closeConnections, connectionTracker)
 		go handleIncomingMessagesToProxy(connections, closeConnections, connectionTracker, extractor)
-	})}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if err := serveTransport(ctx, server, transport); err != nil && err != http.ErrServerClosed {
-		slog.Error("Sidecar server stopped", "error", err)
-	}
+	}))
 }
 
 func proxySidecarServerToClient(deferClose func(), connectionTracker *ConnectionTracker) {
