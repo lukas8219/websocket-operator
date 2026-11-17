@@ -5,6 +5,10 @@ on:
     branches: [ main ]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Build and Test
@@ -21,22 +25,22 @@ jobs:
 
     - name: Run go mod tidy
       run: |
-        go mod tidy -diff
+        bash scripts/ci-check.sh go mod tidy -diff
 
     - name: Verify dependencies
-      run: go mod verify
+      run: bash scripts/ci-check.sh go mod verify
 
     - name: Build
-      run: go build -v ./...
+      run: bash scripts/ci-check.sh go build -v ./...
 
     - name: Run tests
-      run: make test
+      run: bash scripts/ci-check.sh make test
 
     - name: Run tests with race detector
-      run: make test-race
+      run: bash scripts/ci-check.sh make test-race
 
     - name: Run vet
-      run: go vet ./...
+      run: bash scripts/ci-check.sh go vet ./...
 
   build-loadbalancer:
     name: Build Loadbalancer Container
@@ -49,7 +53,7 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: Build Loadbalancer Container
-      run: make build-loadbalancer
+      run: bash scripts/ci-check.sh make build-loadbalancer
 
   build-sidecar:
     name: Build Sidecar Container
@@ -62,7 +66,7 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: Build Sidecar Container
-      run: make build-sidecar
+      run: bash scripts/ci-check.sh make build-sidecar
 
   build-controller:
     name: Build Controller Container
@@ -75,5 +79,5 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: Build Controller Container
-      run: make build-controller
+      run: bash scripts/ci-check.sh make build-controller
 
