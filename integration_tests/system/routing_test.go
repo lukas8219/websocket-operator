@@ -27,7 +27,7 @@ type client struct {
 
 func (c *client) Read(p []byte) (int, error) { return c.reader.Read(p) }
 
-func endpoint(t *testing.T, name string) string {
+func endpoint(t testing.TB, name string) string {
 	t.Helper()
 	value := os.Getenv(name)
 	if value == "" {
@@ -36,7 +36,7 @@ func endpoint(t *testing.T, name string) string {
 	return value
 }
 
-func waitForPeers(t *testing.T, count int) {
+func waitForPeers(t testing.TB, count int) {
 	t.Helper()
 	httpClient := &http.Client{Timeout: 2 * time.Second}
 	url := endpoint(t, "WS_E2E_HOSTS_URL")
@@ -62,7 +62,7 @@ func waitForPeers(t *testing.T, count int) {
 	t.Fatalf("discovery did not converge to %d peers: %s", count, observed)
 }
 
-func connect(t *testing.T, user string) *client {
+func connect(t testing.TB, user string) *client {
 	t.Helper()
 	c := &client{user: user}
 	dialer := ws.Dialer{
@@ -94,7 +94,7 @@ func connect(t *testing.T, user string) *client {
 	return c
 }
 
-func deliver(t *testing.T, sender, recipient *client) {
+func deliver(t testing.TB, sender, recipient *client) {
 	t.Helper()
 	payload, err := json.Marshal(map[string]string{
 		"recipientId": recipient.user, "message": fmt.Sprintf("e2e-%d", time.Now().UnixNano()),

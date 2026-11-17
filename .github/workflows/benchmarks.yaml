@@ -5,7 +5,11 @@ on:
     paths:
       - '.github/workflows/benchmarks.yaml'
       - 'internal/**'
-      - 'cmd/loadbalancer/**'
+      - 'cmd/**'
+      - 'deployments/**'
+      - 'integration_tests/system/**'
+      - 'scripts/test-system.sh'
+      - 'scripts/benchmark-system.sh'
       - 'integration_tests/benchmarks/**'
       - 'scripts/benchmark.sh'
       - 'go.mod'
@@ -31,4 +35,25 @@ jobs:
         with:
           name: routing-benchmarks
           path: reports/benchmarks
+          if-no-files-found: error
+  system:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.34.0
+      - name: Install kind
+        run: go install sigs.k8s.io/kind@v0.30.0
+      - name: Compare direct and routed round trips
+        run: bash scripts/ci-check.sh bash scripts/test-system.sh bash scripts/benchmark-system.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: system-benchmarks
+          path: reports/system-benchmarks
           if-no-files-found: error

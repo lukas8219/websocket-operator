@@ -30,3 +30,18 @@ socket operations. `sync.Map.Range` avoids the slice allocation but has differen
 update costs and does not provide a consistent membership snapshot during writes.
 Compare all three workloads before changing the registry. `B/op` measures total
 allocation per operation, not retained heap size or bytes copied.
+
+For network measurements, run
+`bash scripts/test-system.sh bash scripts/benchmark-system.sh`. The owned kind
+fixture compares a direct application connection with same-pod and cross-pod
+recipient delivery through the load balancer. Each case uses two persistent
+clients (one for direct echo), one outstanding message, a 128/1,024/16,384-byte
+message field and three samples. Each reply must match the expected content.
+
+Results include messages/second and p50/p95/p99 round-trip microseconds. Setup,
+handshakes and percentile sorting are outside the timed loop. Both direct and
+routed traffic use kubectl port-forward, whose overhead is part of the measurement.
+This serial workload establishes a comparison baseline, not saturation capacity.
+Allocation results describe the Go benchmark client, not remote servers; use the
+routing profiles for in-process allocation costs. Retain environment metadata and
+raw samples when comparing revisions. CI publishes `system-benchmarks` artifacts.
