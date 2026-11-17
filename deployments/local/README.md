@@ -1,65 +1,53 @@
-# WebSocket Server Docker Container
+# Demo WebSocket application and client
 
-This is a simple WebSocket server that listens on port 3001 and echoes back messages with a prefix.
+This directory contains a Node.js example application, an interactive client, and
+a legacy CoreDNS-only Compose file. It does not run the complete operator through
+Docker Compose.
 
-## Features
+## Run the application directly
 
-- WebSocket server listening on port 3001
-- Echo functionality for testing WebSocket connections
-- Graceful shutdown handling
+From this directory, with Node.js installed:
 
-## Docker Build and Run Instructions
-
-### Building the Docker Image
-
-```bash
-docker build -t websocket-server:latest .
+```sh
+npm ci
+node simple-socket-server.js 3001
 ```
 
-### Running the Docker Container
+The server sends a welcome message on connection and echoes received data as
+`Server received: ...`. It is a demo application, not a WebSocket conformance
+fixture: it converts incoming data to a string and adds a prefix.
 
-```bash
-docker run -p 3001:3001 websocket-server:latest
+To build its image from the repository root:
+
+```sh
+docker build -f deployments/local/Dockerfile -t websocket-operator-test-server:dev deployments/local
 ```
 
-## Testing the WebSocket Server
+## Use the client through the operator
 
-You can test the WebSocket server using the provided client script:
+First deploy the operator and demo application using the
+[controller instructions](../../cmd/controller/README.md), then expose the load
+balancer from the repository root:
 
-```bash
-# From your host machine
-node simple-socket-client.js
+```sh
+kubectl port-forward service/websocket-operator-loadbalancer 8080:8080
 ```
 
-## Docker Compose Example
+In this directory, open two terminals and run:
 
-You can run both the WebSocket server and the WebSocket sidecar proxy using Docker Compose:
-
-```yaml
-version: '3'
-services:
-  websocket-server:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "3001:3001"
-    restart: unless-stopped
-  
-  websocket-proxy:
-    build:
-      context: ../sidecar
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    depends_on:
-      - websocket-server
-    # Use host.docker.internal to reference host services from a container
-    # or use the service name (websocket-server) within Docker Compose networking
+```sh
+node simple-socket-client.js --user alice --recipientId bob --port 8080
+node simple-socket-client.js --user bob --recipientId alice --port 8080
 ```
 
-## Notes
+Type messages in either terminal to address the other user.
+The client supplies the user-ID header and sends a JSON `recipientId` string.
 
-- The server echoes back messages with the prefix "Server received: "
-- It logs all incoming connections and messages to the console
-- To gracefully shutdown, send a SIGINT signal (Ctrl+C) 
+Messages return through the recipient's application connection. Connecting the
+client directly to the Node.js server tests that application alone; it does not
+exercise user sharding, peer discovery, or sidecar routing.
+
+For automated component tests, use `make test` and `make test-race` at the repository
+root. [Kubernetes discovery tests](../../integration_tests/README.md) require a
+separate test cluster. The old CoreDNS Compose file is not needed by the current
+Kubernetes discovery implementation.

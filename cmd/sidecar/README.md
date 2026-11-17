@@ -1,60 +1,47 @@
-# WebSocket Proxy Sidecar
+# WebSocket sidecar
 
-This is a WebSocket proxy sidecar container that forwards connections from port 3000 to a target WebSocket server on localhost:3001.
+The sidecar accepts a WebSocket connection with a `ws-user-id` header, opens an
+application connection on `localhost:3001`, and registers the user. Incoming client
+messages must be JSON with a string `recipientId`; see the [routing contract](../../README.md#routing-contract).
+Messages for a local recipient go to that recipient's application connection.
+Messages for a remote recipient are forwarded to another sidecar over HTTP.
 
-## Functionality
+## Build and run
 
-The sidecar acts as a proxy for WebSocket connections:
-- Listens for incoming WebSocket connections on port 3000
-- Forwards these connections to a WebSocket server on port 3001
-- Bidirectionally proxies messages between clients and the target WebSocket server
+Build from the **repository root**, where `go.mod` and `internal/` are available:
 
-## Docker Build and Deployment
-
-### Building the Docker Image
-
-```bash
-docker build -t socketio-sidecar:latest .
+```sh
+make build-sidecar
+# Equivalent Docker build:
+docker build -f cmd/sidecar/Dockerfile -t websocket-operator-sidecar:dev .
 ```
 
-### Running the Docker Container
+The current sidecar requires access to Kubernetes for discovery. In a pod it uses
+its service account; outside Kubernetes it uses `KUBECONFIG` or the default
+kubeconfig. Running the image by itself without cluster credentials and an
+application server is not a complete demo.
 
-```bash
-# Basic usage
-docker run -p 3000:3000 socketio-sidecar:latest
+The controller injects the sidecar into a labeled application Deployment. See
+[the controller instructions](../controller/README.md) for the development setup.
+The sidecar and application share the pod's network namespace, so `localhost`
+refers to the same pod, not a different container service on a Docker bridge.
 
-# If you need to connect to a service on the host
-docker run -p 3000:3000 --network="host" socketio-sidecar:latest
-```
+## Configuration and endpoints
 
-### Using in Kubernetes
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `-port` | `3000` | WebSocket and internal HTTP listener |
+| `-targetPort` | `3001` | Application WebSocket port on localhost |
+| `-debug` | `false` | Enable debug logging |
 
-This container is designed to run as a sidecar in a Kubernetes Pod alongside your main application. Example configuration in a Pod:
+Discovery currently uses namespace `default` and Service `ws-proxy-headless`.
+`WS_OPERATOR_SRV_DNS_RECORD` in the example ConfigMap is a legacy setting; the
+current Kubernetes discovery entry point does not read it.
 
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: my-app-with-sidecar
-spec:
-  containers:
-  - name: main-app
-    image: your-main-app:latest
-    ports:
-    - containerPort: 3001
-  - name: websocket-proxy
-    image: socketio-sidecar:latest
-    ports:
-    - containerPort: 3000
-```
-
-## Environment Variables
-
-Currently, the application doesn't support configuration through environment variables. It uses hardcoded ports:
-- Port 3000 for incoming connections
-- Port 3001 for the target WebSocket server
-
-## Notes
-
-- The proxy expects the target WebSocket server to be accessible at `ws://localhost:3001`
-- Ensure proper network configuration if running in Docker or Kubernetes to allow the sidecar to reach the target WebSocket server 
+`POST /message` is the internal peer-delivery endpoint: its body is one WebSocket
+opcode byte followed by the payload, and its recipient is supplied by the user-ID
+header. It is not a JSON-only HTTP API despite carrying JSON application messages.
+An empty body for a registered recipient returns 400; an unknown recipient returns
+404. A successful HTTP response is not an acknowledgment that the end user read
+the message. Deploy this internal endpoint only within the intended application
+network.
