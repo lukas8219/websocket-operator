@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func TestLavinMQPluginToApplication(t *testing.T) {
 		t.Skip("set LAVINMQ_AMQP_URL for real-broker tests")
 	}
 	t.Setenv("WS_OPERATOR_LAVINMQ_URL", url)
-	factory := lavinMQFactory("127.0.0.1:3000", config.Discovery{Namespace: "test", Service: time.Now().Format("150405.000000000")})
+	factory := lavinMQFactory("127.0.0.1:3000", config.Discovery{Namespace: strings.Repeat("n", 63), Service: strings.Repeat("s", 46) + time.Now().Format("150405.000000000")})
 	registry := newConnectionRegistry()
 	local, app := net.Pipe()
 	defer local.Close()
