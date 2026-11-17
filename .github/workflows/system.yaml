@@ -11,6 +11,9 @@ on:
       - 'scripts/**'
       - 'go.mod'
       - 'go.sum'
+concurrency:
+  group: system-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

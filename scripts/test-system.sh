@@ -43,13 +43,14 @@ kubectl apply -f deployments/k8s/configmap.yaml -f deployments/k8s/rbac.yaml
 kubectl apply -f "$system_tmp/manifests/tls-secrets-generated.yaml" -f deployments/k8s/service.yaml
 # Render only the development image/arguments overrides; preserve the shipped resources.
 kubectl create --dry-run=client -f deployments/k8s/deployment.yaml -o json |
-  jq --arg tag "$image_tag" '
-    .items |= map(if .kind == "Deployment" then
+  jq -s --arg tag "$image_tag" '
+    [.[] | if .kind == "List" then .items[] else . end] |
+    {apiVersion:"v1", kind:"List", items: map(if .kind == "Deployment" then
       .spec.template.spec.containers[0] |= (
         .image = ("websocket-operator-" + .name + ":" + $tag) |
         .imagePullPolicy = "IfNotPresent" |
         if .name == "controller" then .args += ["-sidecar-image=websocket-operator-sidecar:" + $tag] else . end)
-    else . end)' | kubectl apply -f -
+    else . end)}' | kubectl apply -f -
 kubectl -n websocket-system rollout status deployment/websocket-operator-controller --timeout=120s
 kubectl rollout status deployment/websocket-operator-loadbalancer --timeout=120s
 kubectl apply -f "$system_tmp/manifests/webhook-generated.yaml"
