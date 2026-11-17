@@ -1,6 +1,6 @@
 COMPONENTS := sidecar controller loadbalancer
 
-.PHONY: all build push gen-certs test test-race test-server-push integration
+.PHONY: all build push gen-certs test test-race test-server-push integration system-test
 .DEFAULT_GOAL := all
 all: $(addprefix build-,$(COMPONENTS))
 
@@ -38,3 +38,7 @@ test-race:
 # Requires a dedicated test cluster selected by KUBECONFIG.
 integration:
 	go test -tags=integration -count=1 -timeout=10m -v ./integration_tests/...
+
+# Owns a disposable kind cluster; see integration_tests/README.md.
+system-test:
+	bash scripts/test-system.sh go test -tags=e2e -count=1 -timeout=3m -v ./integration_tests/system
