@@ -45,10 +45,12 @@ func New(
 		cache:                      lru.New(4096),
 		peerHostsCache:             lru.New(1),
 		version:                    atomic.Uint32{},
-		versionUpgradeChannel:      make(chan ResolverVersion),
+		versionUpgradeChannel:      make(chan ResolverVersion, 1),
 	}
 }
 
+// VersionUpgradeChannel signals that routing changed. Slow consumers receive the
+// latest pending version; they should recompute routes from the current state.
 func (r *ResolverImpl) VersionUpgradeChannel() chan ResolverVersion {
 	return r.versionUpgradeChannel
 }
@@ -64,7 +66,20 @@ func (r *ResolverImpl) Init() {
 		r.peerHostsCache.Clear()
 		r.cache.Clear()
 		slog.Debug("Cleansed cache", "version", r.version.Load())
-		r.versionUpgradeChannel <- new
+		r.publishVersion(new)
+	}
+}
+
+// Init is the only publisher. Notifications are advisory and must never block
+// discovery, including in sidecars that do not subscribe to version changes.
+func (r *ResolverImpl) publishVersion(version ResolverVersion) {
+	select {
+	case <-r.versionUpgradeChannel:
+	default:
+	}
+	select {
+	case r.versionUpgradeChannel <- version:
+	default:
 	}
 }
 
