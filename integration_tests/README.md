@@ -41,3 +41,22 @@ because deployments, pods, and endpoints must be reconciled. The managed cloud
 runtime used during PR preparation lacks cgroup delegation for rootless Docker, so
 kind and the full integration test were not run there. Unit/race tests of peer-state
 updates and compilation of the integration test can run without a cluster.
+
+## Full-system deployment fixture
+
+`scripts/test-system.sh` builds the controller, load balancer, sidecar, and demo
+application from this checkout, loads them into a new kind cluster, installs the
+TLS webhook, and verifies that the application receives exactly one sidecar using
+the selected image. It uses its own temporary kubeconfig and removes the cluster
+on exit. Requirements: Docker capable of running kind, kind, kubectl, openssl,
+and jq. The `System integration` workflow runs it on GitHub-hosted runners.
+
+An optional command runs after readiness, with `WS_E2E_URL` and
+`WS_E2E_HOSTS_URL` pointing to the forwarded load-balancer listeners:
+
+```sh
+bash scripts/test-system.sh your-test-command its-arguments
+```
+
+This fixture checks deployment and injection. Message-delivery assertions are
+supplied by the command, so deployment readiness alone is not a routing test.
