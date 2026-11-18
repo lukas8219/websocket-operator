@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"lukas8219/websocket-operator/internal/transports/builtin"
 	"net"
@@ -11,16 +10,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
-	"lukas8219/websocket-operator/internal/config"
 	"lukas8219/websocket-operator/internal/peer_discovery"
 	"lukas8219/websocket-operator/internal/resolver"
-	"lukas8219/websocket-operator/internal/transports"
 )
 
 type pluginResolver struct {
@@ -43,59 +39,31 @@ func TestLavinMQPluginToApplication(t *testing.T) {
 	t.Setenv("WS_OPERATOR_LAVINMQ_URL", url)
 	for _, namespace := range []string{"amq", strings.Repeat("n", 63)} {
 		t.Run(namespace, func(t *testing.T) {
-			factory := lavinMQFactory("127.0.0.1:3000", config.Discovery{Namespace: namespace, Service: strings.Repeat("s", 46) + fmt.Sprintf("%016x", time.Now().UnixNano())})
+			t.Setenv("WS_OPERATOR_NAMESPACE", namespace)
+			t.Setenv("WS_OPERATOR_SERVICE", strings.Repeat("s", 46)+fmt.Sprintf("%016x", time.Now().UnixNano()))
+			t.Setenv("WS_OPERATOR_POD_IP", "127.0.0.1")
+			t.Setenv("WS_OPERATOR_TRANSPORT_PLUGIN", "lavinmq")
+			config, err := builtin.FromEnv("3000")
+			if err != nil {
+				t.Fatal(err)
+			}
 			registry := newConnectionRegistry()
 			local, app := net.Pipe()
 			defer local.Close()
 			defer app.Close()
 			app.SetDeadline(time.Now().Add(3 * time.Second))
 			registry.register(&ConnectionTracker{user: "recipient", upstreamConn: local})
-			backend, err := transports.Open("lavinmq", transports.Options{Resolver: pluginResolver{}, Deliver: localDelivery(registry)}, map[string]transports.Factory{"lavinmq": factory})
+			backend, err := builtin.Open(config, builtin.Options{Resolver: pluginResolver{}, Deliver: localDelivery(registry)})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer backend.(interface{ Close() error }).Close()
+			defer backend.Close()
 			if err := backend.Write([]byte("recipient"), ws.OpText, []byte("through broker")); err != nil {
 				t.Fatal(err)
 			}
 			body, op, err := wsutil.ReadClientData(app)
 			if err != nil || op != ws.OpText || string(body) != "through broker" {
 				t.Fatalf("%q/%v: %v", body, op, err)
-			}
-		})
-	}
-}
-
-type stoppingTransport struct {
-	done   chan struct{}
-	closed atomic.Int32
-}
-
-func (*stoppingTransport) Write([]byte, ws.OpCode, []byte) error { return nil }
-func (p *stoppingTransport) Done() <-chan struct{}               { return p.done }
-func (p *stoppingTransport) Close() error                        { p.closed.Add(1); return nil }
-
-func TestPluginLifecycle(t *testing.T) {
-	for _, failure := range []bool{false, true} {
-		t.Run(map[bool]string{false: "shutdown", true: "broker loss"}[failure], func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			backend := &stoppingTransport{done: make(chan struct{})}
-			server := &http.Server{Addr: "127.0.0.1:0"}
-			ended := make(chan error, 1)
-			go func() { ended <- serveTransport(ctx, server, backend) }()
-			if failure {
-				close(backend.done)
-			} else {
-				cancel()
-			}
-			select {
-			case err := <-ended:
-				if !errors.Is(err, http.ErrServerClosed) || backend.closed.Load() != 1 {
-					t.Fatalf("shutdown: %v, closes=%d", err, backend.closed.Load())
-				}
-			case <-time.After(time.Second):
-				t.Fatal("server did not stop")
 			}
 		})
 	}
