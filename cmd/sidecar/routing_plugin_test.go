@@ -8,6 +8,7 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 	"lukas8219/websocket-operator/internal/routing"
+	"lukas8219/websocket-operator/internal/transports/link"
 )
 
 func TestBinaryRoutingPluginPreservesPayload(t *testing.T) {
@@ -22,7 +23,7 @@ func TestBinaryRoutingPluginPreservesPayload(t *testing.T) {
 	}
 	registry := newConnectionRegistry()
 	registry.register(&ConnectionTracker{user: "to", upstreamConn: output})
-	tracker := &ConnectionTracker{downstreamConn: input}
+	tracker := &ConnectionTracker{downstreamConn: link.WebSocket(input, ws.StateServerSide)}
 	extractor := routing.ExtractorFunc(func(op ws.OpCode, p []byte) ([]byte, error) {
 		if op != ws.OpBinary || len(p) < 2 {
 			t.Error("unexpected input")

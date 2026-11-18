@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"io"
 	"log"
 	"log/slog"
 	"lukas8219/websocket-operator/internal/config"
@@ -13,11 +12,16 @@ import (
 	"lukas8219/websocket-operator/internal/resolver"
 	"lukas8219/websocket-operator/internal/routing"
 	"lukas8219/websocket-operator/internal/transports"
+	"lukas8219/websocket-operator/internal/transports/builtin"
+	"lukas8219/websocket-operator/internal/transports/link"
 	"lukas8219/websocket-operator/internal/utils"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
@@ -29,7 +33,7 @@ type ConnectionTracker struct {
 	upstreamHost   string
 	downstreamHost string
 	upstreamConn   net.Conn
-	downstreamConn net.Conn
+	downstreamConn link.Session
 	transports.Transport
 }
 
@@ -52,15 +56,12 @@ func (c *ConnectionTracker) Debug(message string, args ...any) *ConnectionTracke
 var routingPlugins = map[string]routing.Extractor{}
 
 func main() {
+	listenHost := flag.String("listenHost", "0.0.0.0", "Interface to listen on")
 	port := flag.String("port", "3000", "Port to listen on")
 	targetPort := flag.String("targetPort", "3001", "Port to target")
 	// mode := flag.String("mode", "kubernetes", "Mode to use")
 	debug := flag.Bool("debug", false, "Debug mode")
 	flag.Parse()
-	userHeader, err := config.UserHeaderFromEnv()
-	if err != nil {
-		log.Fatalf("routing configuration: %v", err)
-	}
 	extractor, err := routing.Select(os.Getenv("WS_OPERATOR_ROUTING_PLUGIN"), routingPlugins)
 	if err != nil {
 		log.Fatalf("routing plugin: %v", err)
@@ -84,93 +85,54 @@ func main() {
 	resolver := resolver.New(peerDiscovery, consistent_hashing.NewJumpHash(peerDiscovery))
 	go resolver.Init()
 	connections := newConnectionRegistry()
-	deliver := localDelivery(connections)
-	transportPlugins["lavinmq"] = lavinMQFactory(net.JoinHostPort(os.Getenv("WS_OPERATOR_POD_IP"), *port), discovery)
-	transport, err := transports.Open(os.Getenv("WS_OPERATOR_TRANSPORT_PLUGIN"), transports.Options{
-		Resolver: resolver, UserHeader: userHeader, Deliver: deliver,
-	}, transportPlugins)
+	transportConfig, err := builtin.FromEnv(*port)
+	if err != nil {
+		log.Fatalf("transport configuration: %v", err)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	var transport builtin.Backend
+	initialized := make(chan struct{})
+	accept := func(user string, session link.Session) error {
+		select {
+		case <-initialized:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		dialContext, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		upstream, buffered, _, err := ws.Dial(dialContext, "ws://localhost:"+*targetPort)
+		if err != nil {
+			return err
+		}
+		tracker := &ConnectionTracker{user: user, upstreamHost: "localhost:" + *targetPort, downstreamHost: "transport", upstreamConn: utils.WithBufferedReader(upstream, buffered), downstreamConn: session, Transport: transport}
+		connections.register(tracker)
+		var once sync.Once
+		closeConnections := func() {
+			once.Do(func() {
+				connections.remove(tracker)
+				tracker.upstreamConn.Close()
+				session.Close()
+			})
+		}
+		go proxySidecarServerToClient(closeConnections, tracker)
+		go handleIncomingMessagesToProxy(connections, closeConnections, tracker, extractor)
+		return nil
+	}
+	transport, err = builtin.Open(transportConfig, builtin.Options{Resolver: resolver, Accept: accept, Deliver: localDelivery(connections)})
 	if err != nil {
 		log.Fatalf("transport plugin: %v", err)
 	}
-
-	slog.Info("Starting server", "port", *port)
-	serveSidecar("0.0.0.0:"+*port, transport, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		slog.Debug("Request received", "method", r.Method, "path", r.URL.Path)
-		if r.Method == http.MethodPost && r.URL.Path == "/message" {
-			userId := r.Header.Get(userHeader)
-			connectionTracker := connections.get(userId)
-			if connectionTracker == nil {
-				slog.Debug("No connection found", "userId", userId)
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			//TODO use io.Pipe here
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				slog.Error("Failed to read request body", "error", err)
-				return
-			}
-
-			if len(body) == 0 {
-				http.Error(w, "message body must include an opcode", http.StatusBadRequest)
-				return
-			}
-
-			opCode := ws.OpCode(body[0])
-			message := body[1:]
-			slog.Debug("Writing message to client", "userId", userId, "opCode", opCode, "message", string(message))
-			err = deliver([]byte(userId), opCode, message)
-			if err != nil {
-				slog.Error("Failed to write WebSocket message", "error", err)
-				return
-			}
-			return
-		}
-		user := r.Header.Get(userHeader)
-		if user == "" {
-			slog.Debug("No user id provided")
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		slog := slog.With("recipientId", user)
+	close(initialized)
+	handler := transport.Handler()
+	server := &http.Server{Addr: net.JoinHostPort(*listenHost, *port), Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("x-ws-operator-instance", os.Getenv("HOSTNAME"))
-		slog.Debug("Dialing proxied connection")
-		proxiedConn, upstreamReader, _, err := ws.Dial(context.Background(), "ws://localhost:"+*targetPort)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			slog.Error("Failed to establish upstream connection", "error", err)
-			return
-		}
-		proxiedConn = utils.WithBufferedReader(proxiedConn, upstreamReader)
-		slog.Debug("Connection established")
-		slog.Debug("Upgrading HTTP connection")
-		clientConn, buffered, _, err := ws.UpgradeHTTP(r, w)
-		if err != nil {
-			slog.Error("Failed to upgrade HTTP connection", "error", err)
-			return
-		}
-		clientConn = utils.WithBufferedReader(clientConn, buffered.Reader)
-		connectionTracker := &ConnectionTracker{
-			user:           user,
-			upstreamHost:   "localhost:" + *targetPort,
-			downstreamHost: r.RemoteAddr,
-			upstreamConn:   proxiedConn,
-			downstreamConn: clientConn,
-			Transport:      transport,
-		}
-		connections.register(connectionTracker)
-		var closeOnce sync.Once
-		closeConnections := func() {
-			closeOnce.Do(func() {
-				connections.remove(connectionTracker)
-				connectionTracker.downstreamConn.Close()
-				connectionTracker.upstreamConn.Close()
-			})
-		}
-
-		go proxySidecarServerToClient(closeConnections, connectionTracker)
-		go handleIncomingMessagesToProxy(connections, closeConnections, connectionTracker, extractor)
-	}))
+		handler.ServeHTTP(w, r)
+	})}
+	slog.Info("Starting server", "port", *port)
+	if err := link.Serve(ctx, transport, server); err != nil {
+		slog.Info("Sidecar stopped", "error", err)
+	}
 }
 
 func proxySidecarServerToClient(deferClose func(), connectionTracker *ConnectionTracker) {
@@ -185,7 +147,7 @@ func proxySidecarServerToClient(deferClose func(), connectionTracker *Connection
 		//TODO: we might need to handle `recipientId` routing messages here also
 
 		//Write as client - to the proxied connection
-		err = wsutil.WriteServerMessage(connectionTracker.downstreamConn, op, msg)
+		err = connectionTracker.downstreamConn.Write(op, msg)
 		if err != nil {
 			connectionTracker.Error("Failed to write to client", "error", err)
 			return
@@ -201,7 +163,7 @@ func proxySidecarServerToClient(deferClose func(), connectionTracker *Connection
 func handleIncomingMessagesToProxy(connections *connectionRegistry, deferClose func(), connectionTracker *ConnectionTracker, extractor routing.Extractor) {
 	defer deferClose()
 	for {
-		msg, op, err := wsutil.ReadClientData(connectionTracker.downstreamConn)
+		msg, op, err := connectionTracker.downstreamConn.Read()
 		if err != nil {
 			connectionTracker.Error("Failed to read from client", "error", err)
 			return

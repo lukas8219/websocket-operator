@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"lukas8219/websocket-operator/internal/transports/lavinmq"
+	"lukas8219/websocket-operator/internal/transports/builtin"
 	"net"
 	"net/http"
 	"os"
@@ -23,9 +23,15 @@ import (
 	"lukas8219/websocket-operator/internal/transports"
 )
 
-type pluginResolver struct{ resolver.Resolver }
+type pluginResolver struct {
+	resolver.Resolver
+	peer peer_discovery.Peer
+}
 
-func (pluginResolver) Lookup([]byte) (peer_discovery.Peer, error) {
+func (r pluginResolver) Lookup([]byte) (peer_discovery.Peer, error) {
+	if r.peer.Port() != 0 {
+		return r.peer, nil
+	}
 	return peer_discovery.NewPeer("127.0.0.1", 3000), nil
 }
 
@@ -107,36 +113,42 @@ func TestLavinMQSelectedBySidecarProcess(t *testing.T) {
 	t.Setenv("WS_OPERATOR_NAMESPACE", "test")
 	t.Setenv("WS_OPERATOR_SERVICE", service)
 	fixture := startBehaviorSidecar(t)
-	dialer := ws.Dialer{Header: ws.HandshakeHeaderHTTP(http.Header{"ws-user-id": []string{"recipient"}})}
-	client, _, _, err := dialer.Dial(context.Background(), "ws://"+fixture.url)
+	host, port, _ := net.SplitHostPort(fixture.url)
+	number, _ := strconv.Atoi(port)
+	transportConfig, err := builtin.FromEnv("1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
-	client.SetDeadline(time.Now().Add(5 * time.Second))
-	// A local round trip proves that the recipient has entered the registry.
-	if err := wsutil.WriteClientMessage(client, ws.OpText, []byte(`{"recipientId":"recipient"}`)); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := wsutil.ReadServerData(client); err != nil {
-		t.Fatal(err)
-	}
-	host, port, _ := net.SplitHostPort(fixture.url)
-	number, _ := strconv.Atoi(port)
-	sender, err := lavinmq.New(lavinmq.Config{URL: url, Address: "127.0.0.1:1", Prefix: "ws-operator.test." + service,
-		Lookup:  func([]byte) (peer_discovery.Peer, error) { return peer_discovery.NewPeer(host, uint16(number)), nil },
-		Deliver: func([]byte, ws.OpCode, []byte) error { return nil },
-	})
+	sender, err := builtin.Open(transportConfig, builtin.Options{Resolver: pluginResolver{peer: peer_discovery.NewPeer(host, uint16(number))}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer sender.Close()
+	timer := time.AfterFunc(5*time.Second, func() { sender.Close() })
+	defer timer.Stop()
+	client, err := sender.Dial(context.Background(), fixture.url, "recipient")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err := client.Write(ws.OpText, []byte(`{"recipientId":"recipient"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := client.Read(); err != nil {
+		t.Fatal(err)
+	}
 	payload := []byte{0, 1, 255}
 	if err := sender.Write([]byte("recipient"), ws.OpBinary, payload); err != nil {
 		t.Fatal(err)
 	}
-	body, op, err := wsutil.ReadServerData(client)
+	body, op, err := client.Read()
 	if err != nil || op != ws.OpBinary || !bytes.Equal(body, payload) {
 		t.Fatalf("process delivery %v/%v: %v", body, op, err)
+	}
+	// The broker mode must not silently keep a direct WebSocket session path.
+	direct := ws.Dialer{Header: ws.HandshakeHeaderHTTP(http.Header{"ws-user-id": []string{"recipient"}})}
+	if conn, _, _, err := direct.Dial(context.Background(), "ws://"+fixture.url); err == nil {
+		conn.Close()
+		t.Fatal("broker endpoint accepted a direct session")
 	}
 }
