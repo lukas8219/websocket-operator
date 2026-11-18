@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"lukas8219/websocket-operator/cmd/loadbalancer/connection"
 	"lukas8219/websocket-operator/internal/resolver"
+	"lukas8219/websocket-operator/internal/transports/link"
 	"lukas8219/websocket-operator/internal/utils"
 	"net/http"
 	"os"
@@ -11,13 +12,13 @@ import (
 	"github.com/gobwas/ws"
 )
 
-func createHandler(rslv *resolver.Resolver, connections *connectionRegistry, userHeader string) http.HandlerFunc {
+func createHandler(rslv *resolver.Resolver, connections *connectionRegistry, userHeader string, endpoint link.Endpoint) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		handleConnection(*rslv, connections, userHeader, w, r)
+		handleConnection(*rslv, connections, userHeader, w, r, endpoint)
 	}
 }
 
-func handleConnection(rslv resolver.Resolver, connections *connectionRegistry, userHeader string, w http.ResponseWriter, r *http.Request) {
+func handleConnection(rslv resolver.Resolver, connections *connectionRegistry, userHeader string, w http.ResponseWriter, r *http.Request, endpoint link.Endpoint) {
 	user := r.Header.Get(userHeader)
 	if user == "" {
 		slog.Error("No user id provided")
@@ -50,8 +51,9 @@ func handleConnection(rslv resolver.Resolver, connections *connectionRegistry, u
 	}
 
 	downstreamConn = utils.WithBufferedReader(downstreamConn, buffered.Reader)
-	proxiedConnection := connection.NewConnection(user, host.SocketAddres(), downstreamConn.RemoteAddr().String(), downstreamConn, userHeader)
+	proxiedConnection := connection.NewSessionConnection(user, host.SocketAddres(), downstreamConn.RemoteAddr().String(), downstreamConn, endpoint)
 	connections.store(proxiedConnection)
+	go func() { <-proxiedConnection.Done(); connections.remove(proxiedConnection) }()
 
 	proxiedConnection.Debug("New connection")
 	go proxiedConnection.Handle()

@@ -56,7 +56,7 @@ func TestNoPeersRejectsNewConnectionsAndClosesExistingOnes(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("ws-user-id", "user")
 	response := httptest.NewRecorder()
-	handleConnection(unavailable, registry, "ws-user-id", response, req)
+	handleConnection(unavailable, registry, "ws-user-id", response, req, nil)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("HTTP %d, want 503", response.Code)
 	}

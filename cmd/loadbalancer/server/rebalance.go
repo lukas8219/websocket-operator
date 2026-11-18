@@ -1,14 +1,27 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	rslv "lukas8219/websocket-operator/internal/resolver"
 	"time"
 )
 
-func handleRebalanceLoop(resolver rslv.Resolver, connections *connectionRegistry) {
+func handleRebalanceLoop(resolver rslv.Resolver, connections *connectionRegistry, contexts ...context.Context) {
+	ctx := context.Background()
+	if len(contexts) > 0 {
+		ctx = contexts[0]
+	}
 	slog.Info("Starting rebalance loop")
-	for _ = range resolver.VersionUpgradeChannel() {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-resolver.VersionUpgradeChannel():
+			if !ok {
+				return
+			}
+		}
 		for _, connectionTracker := range connections.snapshot() {
 			newHost, err := resolver.Lookup([]byte(connectionTracker.User()))
 			if err != nil {
@@ -26,6 +39,8 @@ func handleRebalanceLoop(resolver rslv.Resolver, connections *connectionRegistry
 			connectionTracker.SwitchUpstreamHost(newHost.SocketAddres())
 
 			select {
+			case <-ctx.Done():
+				return
 			case <-connectionTracker.UpstreamCancelChan():
 				connectionTracker.Debug("Successfully received cancellation signal")
 			case <-time.After(5 * time.Second):
