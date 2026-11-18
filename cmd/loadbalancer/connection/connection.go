@@ -8,6 +8,7 @@ import (
 
 // Connection combines tracking and proxying capabilities
 type Connection struct {
+	session *sessionProxy
 	*Tracker
 	Proxier
 }
@@ -30,6 +31,10 @@ func NewConnection(user, upstreamHost, downstreamHost string, downstreamConn net
 
 // Handle manages the connection lifecycle
 func (c *Connection) Handle() {
+	if c.session != nil {
+		c.session.handle()
+		return
+	}
 	proxiedConn, err := c.ProxyDownstreamToUpstream()
 	if err != nil {
 		return
@@ -40,5 +45,9 @@ func (c *Connection) Handle() {
 }
 
 func (c *Connection) Close() {
+	if c.session != nil {
+		c.session.close()
+		return
+	}
 	c.Proxier.Close()
 }
