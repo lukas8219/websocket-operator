@@ -75,6 +75,10 @@ func TestAdmissionInjectionAndDryRun(t *testing.T) {
 				if len(patch) != 1 || patch[0].Path != "/spec/template/spec/containers/-" || patch[0].Value.Image != "example/sidecar:revision" {
 					t.Fatalf("patch: %+v", patch)
 				}
+				env := patch[0].Value.Env
+				if len(env) != 1 || env[0].Name != "WS_OPERATOR_POD_IP" || env[0].ValueFrom == nil || env[0].ValueFrom.FieldRef == nil || env[0].ValueFrom.FieldRef.FieldPath != "status.podIP" {
+					t.Fatalf("missing sidecar pod identity: %+v", env)
+				}
 				if patch[0].Value.EnvFrom[0].ConfigMapRef.Name != "chat-config" {
 					t.Fatal("injection ignored configured ConfigMap")
 				}

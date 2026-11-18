@@ -22,6 +22,8 @@ type Options struct {
 
 // Factory is called once at startup. Backends must support concurrent Write
 // calls; an optional io.Closer is called when the sidecar server returns.
+// An optional Done() <-chan struct{} signals terminal failure so the host exits
+// and Kubernetes can restart it; messages must not be retried implicitly.
 type Factory func(Options) (Transport, error)
 
 // Open selects a compiled backend. HTTP is the reserved default.

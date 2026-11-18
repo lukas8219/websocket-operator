@@ -53,7 +53,7 @@ func New(config Config) (_ *Transport, err error) {
 	host, port, addressErr := net.SplitHostPort(config.Address)
 	n, portErr := strconv.Atoi(port)
 	_, urlErr := amqp.ParseURI(config.URL)
-	if config.URL == "" || urlErr != nil || addressErr != nil || net.ParseIP(host) == nil || portErr != nil || n < 1 || n > 65535 || config.Timeout <= 0 || config.Prefix == "" || len(config.Prefix) > 100 || strings.HasPrefix(config.Prefix, "amq.") || config.Lookup == nil || config.Deliver == nil {
+	if config.URL == "" || urlErr != nil || addressErr != nil || net.ParseIP(host) == nil || portErr != nil || n < 1 || n > 65535 || config.Timeout <= 0 || config.Prefix == "" || len(config.Prefix) > 187 || strings.HasPrefix(config.Prefix, "amq.") || config.Lookup == nil || config.Deliver == nil {
 		return nil, errors.New("invalid LavinMQ configuration")
 	}
 	p := &Transport{config: config, gate: make(chan struct{}, 1), done: make(chan struct{})}
@@ -183,6 +183,9 @@ func (p *Transport) Write(recipient []byte, opcode ws.OpCode, payload []byte) er
 	case <-p.done:
 		return ErrUnavailable
 	default:
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	// amqp091-go's PublishWithContext does not cancel blocked socket writes.
 	stop := context.AfterFunc(ctx, func() { p.Close() })

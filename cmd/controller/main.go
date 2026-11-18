@@ -271,6 +271,9 @@ func createPatch(deployment *appsv1.Deployment, image, configMap string) ([]byte
 				corev1.ResourceMemory: resource.MustParse("25Mi"),
 			},
 		},
+		Env: []corev1.EnvVar{{Name: "WS_OPERATOR_POD_IP", ValueFrom: &corev1.EnvVarSource{
+			FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.podIP"},
+		}}},
 		EnvFrom: []corev1.EnvFromSource{
 			{
 				ConfigMapRef: &corev1.ConfigMapEnvSource{

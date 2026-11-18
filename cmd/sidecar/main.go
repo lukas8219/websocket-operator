@@ -85,18 +85,16 @@ func main() {
 	go resolver.Init()
 	connections := newConnectionRegistry()
 	deliver := localDelivery(connections)
+	transportPlugins["lavinmq"] = lavinMQFactory(net.JoinHostPort(os.Getenv("WS_OPERATOR_POD_IP"), *port), discovery)
 	transport, err := transports.Open(os.Getenv("WS_OPERATOR_TRANSPORT_PLUGIN"), transports.Options{
 		Resolver: resolver, UserHeader: userHeader, Deliver: deliver,
 	}, transportPlugins)
 	if err != nil {
 		log.Fatalf("transport plugin: %v", err)
 	}
-	if closer, ok := transport.(io.Closer); ok {
-		defer closer.Close()
-	}
 
 	slog.Info("Starting server", "port", *port)
-	http.ListenAndServe("0.0.0.0:"+*port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	serveSidecar("0.0.0.0:"+*port, transport, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slog.Debug("Request received", "method", r.Method, "path", r.URL.Path)
 		if r.Method == http.MethodPost && r.URL.Path == "/message" {
 			userId := r.Header.Get(userHeader)
