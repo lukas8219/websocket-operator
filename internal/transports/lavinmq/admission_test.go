@@ -21,3 +21,17 @@ func TestAdmissionTimeoutKeepsTransportAlive(t *testing.T) {
 	default:
 	}
 }
+
+func TestCancelledCallerDoesNotStartPublish(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	p := &Transport{config: Config{Timeout: time.Second, Lookup: func([]byte) (peer_discovery.Peer, error) { return peer_discovery.Peer{}, nil }}, gate: make(chan struct{}, 1), done: make(chan struct{})}
+	if err := p.WriteContext(ctx, []byte("user"), ws.OpText, nil); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	select {
+	case <-p.Done():
+		t.Fatal("cancelled admission closed transport")
+	default:
+	}
+}

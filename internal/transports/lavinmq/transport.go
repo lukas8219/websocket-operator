@@ -157,10 +157,15 @@ func (p *Transport) consume(deliveries <-chan amqp.Delivery) {
 // while waiting for admission is harmless; once publishing starts it closes the
 // connection, because the broker may already have accepted the message.
 func (p *Transport) Write(recipient []byte, opcode ws.OpCode, payload []byte) error {
+	return p.WriteContext(context.Background(), recipient, opcode, payload)
+}
+
+// WriteContext also bounds a session handshake by its caller's deadline.
+func (p *Transport) WriteContext(parent context.Context, recipient []byte, opcode ws.OpCode, payload []byte) error {
 	if len(recipient) == 0 || (opcode != ws.OpText && opcode != ws.OpBinary) || len(payload) > MaxPayload {
 		return errors.New("invalid LavinMQ message")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), p.config.Timeout)
+	ctx, cancel := context.WithTimeout(parent, p.config.Timeout)
 	defer cancel()
 	select {
 	case <-p.done:
