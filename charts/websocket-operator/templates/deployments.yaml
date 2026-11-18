@@ -1,3 +1,6 @@
+{{- if and (eq .Values.transport.name "lavinmq") (not .Values.transport.existingSecret) }}
+{{- fail "transport.existingSecret is required for lavinmq" }}
+{{- end }}
 {{- $root := . }}
 {{- $n := printf "%s-ws" .Release.Name }}
 {{- range $component, $short := dict "controller" "ctrl" "loadbalancer" "lb" }}
@@ -29,6 +32,9 @@ spec:
             - --sidecar-image={{ $root.Values.images.sidecar }}:{{ $root.Values.images.tag }}
             - --service-name={{ $n }}-peers
             - --config-map={{ $n }}-config
+            {{- if $root.Values.transport.existingSecret }}
+            - --transport-secret={{ $root.Values.transport.existingSecret }}
+            {{- end }}
           readinessProbe:
             httpGet: {path: /health, port: 8080, scheme: HTTPS}
           volumeMounts:
@@ -36,6 +42,17 @@ spec:
           {{- else }}
           command: ["./loadbalancer"]
           args: ["--debug=false"]
+          env:
+            - name: WS_OPERATOR_POD_IP
+              valueFrom:
+                fieldRef: {fieldPath: status.podIP}
+            {{- if $root.Values.transport.existingSecret }}
+            - name: WS_OPERATOR_LAVINMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.transport.existingSecret | quote }}
+                  key: WS_OPERATOR_LAVINMQ_URL
+            {{- end }}
           envFrom:
             - configMapRef: {name: {{ $n }}-config}
           readinessProbe:

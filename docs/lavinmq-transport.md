@@ -1,15 +1,16 @@
 # LavinMQ transport contract
 
-LavinMQ is a compiled Go transport backend for #65, using AMQP 0-9-1 directly.
-HTTP remains the default. Select `WS_OPERATOR_TRANSPORT_PLUGIN=lavinmq` to
-use this backend through the same `Transport.Write` interface.
+LavinMQ is a compiled Go plugin shared by the load balancer and sidecar.
+`internal/transports/builtin.Factories` is their single registration point.
+The default `http` plugin uses WebSocket sessions and HTTP cross-sidecar delivery.
+Selecting `lavinmq` replaces the entire internal link with AMQP: session open,
+application readiness, messages, replies, close, and liveness. External clients
+and application servers still use WebSockets. See [the design](design/shared-transport.md).
 
-Each sidecar owns one exclusive, non-durable queue named from a service prefix
-and the SHA-256 of its discovery socket address. All sidecars in the same service
-must share a broker/vhost and prefix. Different services must use different
-prefixes. A lookup still chooses the recipient's pod; AMQP carries its routing
-key, WebSocket opcode, and unchanged payload to that pod's local delivery callback.
-This does not change load-balancer routing or manage a broker/shovel for you.
+Each load balancer and sidecar owns an exclusive, temporary inbox named from the
+service prefix and a hash of its pod IP/listen port. Random session IDs return
+replies to the owning load balancer. The sidecar still resolves recipients and
+routes cross-sidecar messages. A ready reply means the application socket opened.
 
 `Write` waits for a publisher confirmation. Mandatory publishing detects missing
 target queues. Success means the broker accepted the message, not that the user
@@ -33,42 +34,61 @@ networks; connection errors do not echo the credential-bearing URL.
 
 ## Enable the plugin
 
-Use an image containing this change for both the controller and sidecar. Install
-LavinMQ separately; the operator does not provision it. All replicas must use the
-same transport, broker/vhost, discovery namespace, and discovery service.
+Build all three images from the same revision. Install LavinMQ separately and
+create a Secret named `ws-lavinmq`, with key `WS_OPERATOR_LAVINMQ_URL`, in the
+application/release namespace. Supply its URL through your secret manager or a
+protected file. All load balancers and sidecars must share the same broker/vhost,
+plugin, discovery namespace, and discovery service.
 
-For an already injected Deployment named `chat`, create a Kubernetes Secret named
-`ws-lavinmq` with key `WS_OPERATOR_LAVINMQ_URL` containing its AMQP URL. Supply the
-value through your secret manager or a protected file; do not store it in the
-shared ConfigMap.
+For Helm, use:
 
-The updated injector supplies `WS_OPERATOR_POD_IP` from `status.podIP`. Existing
-injected containers need that downward-API environment variable added explicitly:
+```sh
+helm upgrade --install chat charts/websocket-operator -n chat \
+  --set transport.name=lavinmq --set transport.existingSecret=ws-lavinmq
+```
+
+The chart configures the load balancer and tells the controller to inject the
+same Secret reference. The controller does not read the Secret's contents.
+For plain manifests, set `WS_OPERATOR_TRANSPORT_PLUGIN=lavinmq` in the shared
+ConfigMap, add `--transport-secret=ws-lavinmq` to the controller arguments, and
+reference the Secret key in the load-balancer container's environment:
 
 ```yaml
-# Merge into spec.template.spec.containers[name=websocket-proxy].env
+- name: WS_OPERATOR_LAVINMQ_URL
+  valueFrom:
+    secretKeyRef:
+      name: ws-lavinmq
+      key: WS_OPERATOR_LAVINMQ_URL
+```
+
+Existing injected sidecars also need that Secret reference; the injector skips
+containers already named `websocket-proxy`. All endpoints need pod identity:
+
+```yaml
 - name: WS_OPERATOR_POD_IP
   valueFrom:
     fieldRef:
       fieldPath: status.podIP
 ```
 
-Once the Secret and pod-IP variable are in place, enable the injected container:
+The chart, load-balancer manifest, and injector supply pod identity. Manual
+sidecars must match the discovery address (normally pod IP, port 3000).
+The shared-link queue prefix is `ws-operator.link.<namespace>.<service>`.
+It deliberately differs from the old one-way plugin's queue schema.
+Coordinate deployment of **both roles** and reconnect clients: mixed versions or
+mixed plugins cannot share sessions. Updating a ConfigMap or Secret alone does
+not refresh process environment; restart existing pods after configuration changes.
 
-```sh
-kubectl set env deployment/chat --containers=websocket-proxy \
-  --from=secret/ws-lavinmq WS_OPERATOR_TRANSPORT_PLUGIN=lavinmq
-kubectl rollout status deployment/chat
-```
+Broker loss or an ambiguous publish timeout closes every local session and the
+HTTP listeners. Deployments restart the process; there is no replay. Idle sessions
+send heartbeats every five seconds and expire after twenty seconds without peer
+activity. A missing destination queue is detected on the next publish.
+Each endpoint admits at most 256 sessions; session inboxes hold sixteen messages
+with a shared 16 MiB budget. User IDs are limited to 512 bytes. The versioned wire
+header reserves 4101 bytes from the 16 MiB message limit; payload bytes are raw,
+not base64. Use separate broker permissions for mutually untrusted applications;
+source addresses in messages are routing checks, not authentication.
 
-Manual sidecars need the same variable. Its IP and the sidecar listen port must
-match the discovery endpoint (normally port 3000). The queue prefix is
-`ws-operator.<namespace>.<service>`, using the existing discovery configuration.
-Coordinate the restart of all replicas: mixed HTTP/LavinMQ pods can lose messages.
-Broker loss or a publish timeout exits the sidecar; Deployments restart it under
-`restartPolicy: Always`. Restart does not recover the temporary queue or retry
-uncertain messages. SIGTERM closes the broker connection as the server stops.
-
-Run broker-backed tests with `LAVINMQ_AMQP_URL=amqp://guest:guest@127.0.0.1:5672/`
-and `go test -race ./internal/transports/... ./cmd/sidecar`. CI starts a
-checksum-pinned LavinMQ 2.11.1 process and also exercises network failures.
+Run `LAVINMQ_AMQP_URL=amqp://guest:guest@127.0.0.1:5672/ go test -race
+./internal/transports/... ./cmd/sidecar ./cmd/loadbalancer/...` against a local
+broker. CI uses checksum-pinned LavinMQ 2.11.1.

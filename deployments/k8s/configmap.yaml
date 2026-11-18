@@ -6,5 +6,6 @@ metadata:
   labels:
     app: websocket-operator
 data:
+  WS_OPERATOR_TRANSPORT_PLUGIN: "http"
   WS_OPERATOR_USER_HEADER: "ws-user-id"
   WS_OPERATOR_SRV_DNS_RECORD: "ws-proxy-headless.default.svc.cluster.local"

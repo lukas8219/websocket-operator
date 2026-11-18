@@ -4,6 +4,7 @@ kind: ConfigMap
 metadata:
   name: {{ $n }}-config
 data:
+  WS_OPERATOR_TRANSPORT_PLUGIN: {{ .Values.transport.name | quote }}
   WS_OPERATOR_USER_HEADER: {{ .Values.userHeader | quote }}
   WS_OPERATOR_NAMESPACE: {{ .Release.Namespace | quote }}
   WS_OPERATOR_SERVICE: {{ printf "%s-peers" $n | quote }}

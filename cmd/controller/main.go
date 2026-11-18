@@ -25,12 +25,13 @@ import (
 )
 
 var (
-	port          int
-	certDir       string
-	tlsEnabled    bool
-	sidecarImage  string
-	configMapName string
-	serviceName   string
+	port            int
+	certDir         string
+	tlsEnabled      bool
+	sidecarImage    string
+	configMapName   string
+	transportSecret string
+	serviceName     string
 )
 
 const (
@@ -38,6 +39,7 @@ const (
 )
 
 func init() {
+	flag.StringVar(&transportSecret, "transport-secret", "", "Secret in the application namespace containing WS_OPERATOR_LAVINMQ_URL.")
 	flag.StringVar(&configMapName, "config-map", "websocket-operator-config", "ConfigMap in the application namespace used by injected sidecars.")
 	flag.StringVar(&serviceName, "service-name", "ws-proxy-headless", "Headless Service for the application routing pool.")
 	flag.IntVar(&port, "port", 8080, "The port for the webhook server to listen on.")
@@ -48,11 +50,12 @@ func init() {
 
 // SidecarInjector handles admission webhook requests
 type SidecarInjector struct {
-	decoder       runtime.Decoder
-	client        kubernetes.Interface
-	sidecarImage  string
-	configMapName string
-	serviceName   string
+	decoder         runtime.Decoder
+	client          kubernetes.Interface
+	sidecarImage    string
+	configMapName   string
+	transportSecret string
+	serviceName     string
 }
 
 // NewSidecarInjector creates a new SidecarInjector
@@ -224,7 +227,7 @@ func (si *SidecarInjector) mutate(ar *admissionv1.AdmissionReview) *admissionv1.
 	}
 
 	log.Printf("Injecting sidecar to deployment %s/%s", deployment.Namespace, deployment.Name)
-	patch, err := createPatch(&deployment, si.sidecarImage, si.configMapName)
+	patch, err := createPatch(&deployment, si.sidecarImage, si.configMapName, si.transportSecret)
 	if err != nil {
 		log.Printf("Failed to create patch: %v", err)
 		return &admissionv1.AdmissionResponse{
@@ -248,7 +251,7 @@ func (si *SidecarInjector) mutate(ar *admissionv1.AdmissionReview) *admissionv1.
 }
 
 // createPatch creates a JSON patch to add the sidecar container
-func createPatch(deployment *appsv1.Deployment, image, configMap string) ([]byte, error) {
+func createPatch(deployment *appsv1.Deployment, image, configMap, secret string) ([]byte, error) {
 	var patches []map[string]interface{}
 
 	// Add sidecar container
@@ -284,6 +287,12 @@ func createPatch(deployment *appsv1.Deployment, image, configMap string) ([]byte
 			},
 		},
 		Command: []string{"./sidecar", "-debug"},
+	}
+
+	if secret != "" {
+		sidecarContainer.Env = append(sidecarContainer.Env, corev1.EnvVar{Name: "WS_OPERATOR_LAVINMQ_URL", ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: secret}, Key: "WS_OPERATOR_LAVINMQ_URL"},
+		}})
 	}
 
 	containerPatch := map[string]interface{}{
@@ -327,6 +336,7 @@ func main() {
 	}
 	injector := NewSidecarInjector(client, sidecarImage)
 	injector.configMapName = configMapName
+	injector.transportSecret = transportSecret
 	injector.serviceName = serviceName
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mutate", injector.sidecarInjectionHandler)

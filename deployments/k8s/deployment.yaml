@@ -78,6 +78,10 @@ spec:
       serviceAccountName: loadbalancer-sa
       containers:
         - name: loadbalancer
+          env:
+            - name: WS_OPERATOR_POD_IP
+              valueFrom:
+                fieldRef: {fieldPath: status.podIP}
           envFrom:
             - configMapRef:
                 name: websocket-operator-config

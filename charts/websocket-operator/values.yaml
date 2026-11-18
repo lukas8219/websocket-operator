@@ -6,6 +6,10 @@ images:
   tag: latest
   pullPolicy: IfNotPresent
 userHeader: ws-user-id
+transport:
+  name: http
+  # Required for lavinmq; key WS_OPERATOR_LAVINMQ_URL, in this release namespace.
+  existingSecret: ""
 application:
   # One application Deployment/routing pool per release namespace.
   selector: {app: main-ws-server}
