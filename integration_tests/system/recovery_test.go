@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 )
 
@@ -43,6 +44,14 @@ func scaleApplication(t *testing.T, count int) {
 func TestScaleToZeroAndRecovery(t *testing.T) {
 	waitForPeers(t, 3)
 	existing := connect(t, "e2e-before-scaling")
+	// Restore the fixture even if a shutdown assertion fails. Otherwise the
+	// following routing tests fail against the intentionally empty deployment.
+	restored := false
+	t.Cleanup(func() {
+		if !restored {
+			scaleApplication(t, 3)
+		}
+	})
 	scaleApplication(t, 0)
 	waitForPeers(t, 0)
 	request, err := http.NewRequest("GET", strings.Replace(endpoint(t, "WS_E2E_URL"), "ws://", "http://", 1), nil)
@@ -59,14 +68,24 @@ func TestScaleToZeroAndRecovery(t *testing.T) {
 		t.Fatalf("no peers returned HTTP %d, want 503", response.StatusCode)
 	}
 	existing.SetReadDeadline(time.Now().Add(10 * time.Second))
-	_, _, err = wsutil.ReadServerData(existing)
-	if err == nil {
-		t.Fatal("unroutable connection remained open")
+	for {
+		var body []byte
+		var op ws.OpCode
+		body, op, err = wsutil.ReadServerData(existing)
+		if err != nil {
+			break
+		}
+		// Removing peers can briefly rebalance onto a remaining sidecar. Its
+		// application greeting can precede EOF in the TCP receive buffer.
+		if op != ws.OpText || string(body) != "Welcome to the WebSocket server!" {
+			t.Fatalf("unexpected message while awaiting close: %q/%v", body, op)
+		}
 	}
 	if timed, ok := err.(net.Error); ok && timed.Timeout() {
 		t.Fatalf("load balancer did not close the unroutable connection: %v", err)
 	}
 	scaleApplication(t, 3)
+	restored = true
 	waitForPeers(t, 3)
 	recovered := connect(t, "e2e-after-scaling")
 	deliver(t, recovered, recovered)
