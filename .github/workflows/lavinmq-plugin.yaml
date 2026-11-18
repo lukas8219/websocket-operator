@@ -2,7 +2,7 @@ name: LavinMQ plugin
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['internal/transports/**', 'cmd/sidecar/**', '.github/workflows/lavinmq-plugin.yaml', 'go.mod', 'go.sum']
+    paths: ['internal/transports/**', 'cmd/sidecar/**', 'cmd/loadbalancer/**', 'integration_tests/transportlink/**', '.github/workflows/lavinmq-plugin.yaml', 'go.mod', 'go.sum']
 permissions:
   contents: read
 concurrency:
@@ -30,6 +30,7 @@ jobs:
           trap 'kill "$broker_pid" 2>/dev/null || true' EXIT
           for attempt in {1..50}; do nc -z 127.0.0.1 5672 && break; sleep 0.2; done
           LAVINMQ_AMQP_URL=amqp://guest:guest@127.0.0.1:5672/ go test -race -count=3 -timeout=90s ./internal/transports/... ./cmd/sidecar | tee reports/lavinmq-plugin/tests.log
+          LAVINMQ_AMQP_URL=amqp://guest:guest@127.0.0.1:5672/ go test -race -tags=transportintegration -count=2 -timeout=180s ./integration_tests/transportlink | tee reports/lavinmq-plugin/process-tests.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

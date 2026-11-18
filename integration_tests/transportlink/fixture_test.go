@@ -111,7 +111,7 @@ func buildBinaries(t *testing.T) map[string]string {
 	result := map[string]string{}
 	for _, name := range []string{"sidecar", "loadbalancer"} {
 		result[name] = filepath.Join(dir, name)
-		cmd := exec.Command("go", "build", "-race", "-o", result[name], "./cmd/"+name)
+		cmd := exec.Command("go", "build", "-buildvcs=false", "-race", "-o", result[name], "./cmd/"+name)
 		cmd.Dir = "../.."
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("build %s: %v\n%s", name, err, output)
