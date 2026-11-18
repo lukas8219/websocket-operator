@@ -8,7 +8,7 @@ status=${PIPESTATUS[0]}
 if (( status != 0 )) && [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
   # Cleanup logs must not hide the earlier Go failure. Use one multiline
   # annotation because Actions limits the number of annotations per step.
-  details=$(awk '/_test.go:[0-9]+|--- FAIL:|^FAIL|^Error:|^error:/ {print}' "$check_log" | head -40)
+  details=$(awk '/\.go:[0-9]+|--- FAIL:|^FAIL|^Error:|^error:|^panic:|fatal error:|lastTermination/ {print}' "$check_log" | head -40)
   details+=$'\n'
   details+=$(tail -30 "$check_log")
   details=${details//'%'/'%25'}
