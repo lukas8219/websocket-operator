@@ -3,6 +3,8 @@
 LavinMQ is a compiled Go transport backend for #65, using AMQP 0-9-1 directly.
 HTTP remains the default. Select `WS_OPERATOR_TRANSPORT_PLUGIN=lavinmq` to
 use this backend through the same `Transport.Write` interface.
+The [routing boundary](routed-transport.md) is a missing local recipient: local
+delivery and the existing WebSocket connections bypass the plugin.
 
 Each sidecar owns one exclusive, non-durable queue named from a service prefix
 and the SHA-256 of its discovery socket address. All sidecars in the same service
